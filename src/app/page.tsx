@@ -54,6 +54,8 @@ interface Pitch {
   area: string;
   city: string;
   type: string;
+  ownerName: string;
+  ownerPhone: string;
   defaultPricePerHour: number;
   rating: number;
   imageUrl: string;
@@ -61,6 +63,7 @@ interface Pitch {
   features: string[];
   subscriptionStatus: 'active' | 'expired' | 'emergency';
   subscriptionDaysLeft: number;
+  lastRenewDate: string;
   emergencyUsedInCurrentCycle: boolean;
 }
 
@@ -117,7 +120,6 @@ export default function Home() {
   const [authMsg, setAuthMsg] = useState('');
   const [authError, setAuthError] = useState('');
 
-  // بيانات دخول الإدارة العامة
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -130,6 +132,8 @@ export default function Home() {
     area: 'المنصور - شارع 14 رمضان',
     city: 'بغداد',
     type: 'خماسي ثيل تركي درجة أولى',
+    ownerName: 'كابتن hbosh',
+    ownerPhone: '07800000000',
     defaultPricePerHour: 20000,
     rating: 4.9,
     imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
@@ -137,6 +141,7 @@ export default function Home() {
     features: ['ثيل عالي الجودة', 'إنارة ليد دولية', 'كافتيريا وعصائر', 'غرف تبديل وتبريد', 'كراج سيارات'],
     subscriptionStatus: 'active',
     subscriptionDaysLeft: 30,
+    lastRenewDate: '2026-09-01',
     emergencyUsedInCurrentCycle: false
   });
 
@@ -147,7 +152,6 @@ export default function Home() {
   const [profileSavedToast, setProfileSavedToast] = useState(false);
 
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
@@ -222,7 +226,6 @@ export default function Home() {
   const currentDayBookedCount = currentDaySlots.filter(s => s.isBooked).length;
   const currentDayRevenue = currentDaySlots.filter(s => s.isBooked).reduce((sum, s) => sum + s.price, 0);
 
-  const totalMonthlyCompletedBookings = 26 + Object.values(allSlots).flat().filter(s => s.isBooked).length;
   const totalMonthlyRevenue = Object.values(allSlots).flat().filter(s => s.isBooked).reduce((sum, s) => sum + s.price, 0) + (26 * 20000);
 
   const whatsappUrl = `https://wa.me/${adminWhatsAppNumber}?text=${encodeURIComponent(
@@ -264,6 +267,8 @@ export default function Home() {
       setPitch(prev => ({
         ...prev,
         name: regPitchName || prev.name,
+        ownerName: regName || prev.ownerName,
+        ownerPhone: regPhone,
         subscriptionStatus: 'expired'
       }));
     }
@@ -314,7 +319,6 @@ export default function Home() {
     });
   };
 
-  // تسجيل دخول الإدارة ببيانات hbosh و Zz@101620
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (adminUsername === 'hbosh' && adminPassword === 'Zz@101620') {
@@ -427,7 +431,7 @@ export default function Home() {
   return (
     <div dir="rtl" className="min-h-screen bg-slate-950 text-slate-100 font-sans p-3 md:p-8 flex flex-col justify-between">
       <div>
-        {/* الشريط العلوي العام مع أيقونة الساعة بدلاً من النجمة */}
+        {/* الشريط العلوي العام مع أيقونة الساعة */}
         <header className="max-w-5xl mx-auto flex justify-between items-center pb-5 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="bg-emerald-600 p-2 rounded-xl shadow-lg shadow-emerald-900/40">
@@ -463,7 +467,7 @@ export default function Home() {
 
         <main className="max-w-5xl mx-auto mt-6">
 
-          {/* 0. شاشة الدخول والتسجيل النظيفة */}
+          {/* 0. شاشة تسجيل الدخول والنظام */}
           {currentUser.role === 'guest' && (
             <div className="py-8 md:py-14 max-w-md mx-auto space-y-6">
               <div className="text-center space-y-2">
@@ -471,7 +475,6 @@ export default function Home() {
                 <p className="text-xs text-slate-400">سجّل دخولك للوصول إلى الملاعب والحجوزات</p>
               </div>
 
-              {/* بطاقة التبديل بين (لاعب) و (صاحب ملعب) */}
               <div className="bg-slate-900 p-1.5 rounded-2xl border border-slate-800 grid grid-cols-2 gap-1">
                 <button
                   type="button"
@@ -503,7 +506,6 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* نموذج: تسجيل الدخول */}
               {authMode === 'login' && (
                 <form onSubmit={handleLogin} className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
@@ -593,7 +595,6 @@ export default function Home() {
                 </form>
               )}
 
-              {/* نموذج: إنشاء حساب مجاني */}
               {authMode === 'register' && (
                 <form onSubmit={handleRegister} className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
@@ -681,7 +682,6 @@ export default function Home() {
                 </form>
               )}
 
-              {/* نموذج: نسيت كلمة السر عبر واتساب */}
               {authMode === 'forgot' && (
                 <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
@@ -1079,30 +1079,62 @@ export default function Home() {
             </div>
           )}
 
-          {/* 3. لوحة الإدارة المركزية */}
+          {/* 3. لوحة الإدارة المركزية (مع تفاصيل الاشتراكات وأصحاب الملاعب بدقة) */}
           {currentUser.role === 'admin' && (
             <div className="bg-slate-900 border border-blue-900/60 p-6 rounded-3xl space-y-6">
               <div className="flex items-center gap-2 text-blue-400 border-b border-slate-800 pb-3">
                 <ShieldCheck className="w-6 h-6" />
-                <h3 className="text-lg font-black text-white">لوحة الإدارة المركزية (تحكم الاشتراكات)</h3>
+                <h3 className="text-lg font-black text-white">لوحة الإدارة المركزية (كشف بيانات الملاعب والاشتراكات)</h3>
               </div>
-              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">
-                <div>
-                  <h4 className="font-bold text-white">{pitch.name}</h4>
-                  <p className="text-xs text-slate-400">الحالة: {pitch.subscriptionStatus === 'active' ? `نشط (${pitch.subscriptionDaysLeft} يوم)` : 'معطل'}</p>
+
+              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
+                  <div>
+                    <h4 className="font-bold text-white text-base">{pitch.name}</h4>
+                    <p className="text-xs text-slate-400 mt-0.5">العنوان: {pitch.area}</p>
+                  </div>
+                  <span className={`text-xs px-3 py-1 rounded-full font-bold ${
+                    pitch.subscriptionStatus === 'active' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                  }`}>
+                    {pitch.subscriptionStatus === 'active' ? `الاشتراك نشط (${pitch.subscriptionDaysLeft} يوم متبقي)` : 'الاشتراك منتهي'}
+                  </span>
                 </div>
-                <div className="flex gap-2">
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                    <span className="text-slate-400 block">اسم صاحب الملعب:</span>
+                    <span className="text-white font-bold text-sm block">{pitch.ownerName}</span>
+                  </div>
+                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                    <span className="text-slate-400 block">رقم هاتفه:</span>
+                    <span className="text-emerald-400 font-mono font-bold text-sm block">{pitch.ownerPhone}</span>
+                  </div>
+                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                    <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
+                    <span className="text-amber-400 font-mono font-bold text-sm block">{pitch.lastRenewDate}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap gap-3">
                   <button
-                    onClick={() => setPitch(prev => ({ ...prev, subscriptionStatus: 'active', subscriptionDaysLeft: prev.subscriptionDaysLeft + 30 }))}
-                    className="bg-emerald-600 text-white font-bold text-xs px-4 py-2 rounded-xl"
+                    onClick={() => {
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      setPitch(prev => ({
+                        ...prev,
+                        subscriptionStatus: 'active',
+                        subscriptionDaysLeft: prev.subscriptionDaysLeft + 30,
+                        lastRenewDate: todayStr
+                      }));
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
                   >
-                    + 30 يوماً
+                    + تمديد الاشتراك 30 يوماً وتحديث التاريخ
                   </button>
                   <button
                     onClick={() => setPitch(prev => ({ ...prev, subscriptionStatus: 'expired', subscriptionDaysLeft: 0 }))}
-                    className="bg-rose-600 text-white font-bold text-xs px-4 py-2 rounded-xl"
+                    className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
                   >
-                    تعطيل الحساب
+                    تعطيل اشتراك الملعب
                   </button>
                 </div>
               </div>
@@ -1112,7 +1144,6 @@ export default function Home() {
         </main>
       </div>
 
-      {/* رابط بوابة الإدارة في أسفل الموقع */}
       <footer className="mt-12 pt-4 border-t border-slate-900 text-center text-xs text-slate-600">
         <button
           onClick={() => setShowAdminModal(true)}
@@ -1122,7 +1153,7 @@ export default function Home() {
         </button>
       </footer>
 
-      {/* نافذة تسجيل دخول الإدارة ببيانات (hbosh / Zz@101620) */}
+      {/* نافذة تسجيل دخول الإدارة (كلمة السر مخفية بالنقاط) */}
       {showAdminModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-blue-900/80 w-full max-w-xs rounded-3xl p-6 space-y-4 text-center">
