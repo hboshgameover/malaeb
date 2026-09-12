@@ -20,8 +20,6 @@ import {
   Eye, 
   EyeOff, 
   Trash2, 
-  CheckSquare, 
-  Square, 
   LogOut, 
   KeyRound, 
   X, 
@@ -31,17 +29,26 @@ import {
   Users, 
   Building2 
 } from 'lucide-react';
-import { auth, googleProvider, appleProvider, db } from '@/lib/firebase';
-import { signInWithPopup, signOut } from 'firebase/auth';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  onSnapshot, 
-  updateDoc, 
-  deleteDoc 
-} from 'firebase/firestore';
+
+// إعداد Firebase الصريح والمباشر داخل الملف لقطع دابر أي خطأ بالمفاتيح
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, getFirestore } from "firebase/firestore";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA7q79KfcmHcS2pCZ-UBNx3iDwqKSePIyo",
+  authDomain: "la3batna-c6480.firebaseapp.com",
+  projectId: "la3batna-c6480",
+  storageBucket: "la3batna-c6480.firebasestorage.app",
+  messagingSenderId: "448877407537",
+  appId: "1:448877407537:web:f225728542a48ebc0b9410"
+};
+
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+const appleProvider = new OAuthProvider('apple.com');
+const db = getFirestore(app);
 
 interface Slot {
   id: string;
@@ -135,13 +142,11 @@ export default function Home() {
   const [selectedProvinceFilter, setSelectedProvinceFilter] = useState<string>('الكل');
   const [activePortal, setActivePortal] = useState<'player' | 'owner'>('player');
 
-  // واجهة إكمال ملف اللاعب الجديد
   const [showPlayerProfileSetup, setShowPlayerProfileSetup] = useState(false);
   const [playerTempAuth, setPlayerTempAuth] = useState<{ uid: string; name: string; email: string } | null>(null);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
 
-  // واجهة إكمال ملف صاحب الملعب الجديد
   const [showOwnerPitchSetup, setShowOwnerPitchSetup] = useState(false);
   const [ownerTempAuth, setOwnerTempAuth] = useState<{ uid: string; name: string; email: string } | null>(null);
   const [newPitchName, setNewPitchName] = useState('');
@@ -152,18 +157,15 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // لوحة الإدارة
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
   const [showAdminPass, setShowAdminPass] = useState(false);
 
-  // تعديل اسم اللاعب
   const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
   const [tempPlayerName, setTempPlayerName] = useState('');
 
-  // لوحة صاحب الملعب
   const [ownerTab, setOwnerTab] = useState<'bookings' | 'profile'>('bookings');
   const [editName, setEditName] = useState('');
   const [editProvince, setEditProvince] = useState('بغداد');
@@ -191,7 +193,6 @@ export default function Home() {
   const [schedulePrice, setSchedulePrice] = useState(20000);
   const [revenueFilter, setRevenueFilter] = useState<'daily' | 'monthly'>('daily');
 
-  // مزامنة Firestore في الوقت الحقيقي
   useEffect(() => {
     setIsClient(true);
     try {
@@ -345,7 +346,6 @@ export default function Home() {
     `مرحباً الدعم الفني لمنصة لعبتنا ⚽\nأحتاج إلى مساعدة بخصوص المنظومة.`
   )}`;
 
-  // الدخول عبر Google أو Apple
   const handleSocialAuth = async (providerType: 'google' | 'apple') => {
     setAuthError('');
     setAuthLoading(true);
@@ -358,7 +358,6 @@ export default function Home() {
       const userEmail = user.email || '';
 
       if (activePortal === 'player') {
-        // فحص ملف اللاعب في Firestore
         const playerDoc = await getDoc(doc(db, 'players', uid));
         if (playerDoc.exists()) {
           const pData = playerDoc.data() as PlayerAccount;
@@ -370,15 +369,13 @@ export default function Home() {
             email: userEmail
           });
         } else {
-          // لاعب جديد: فتح نافذة إنشاء البروفايل (الاسم + الرقم)
           setPlayerTempAuth({ uid, name: userName, email: userEmail });
           setNewPlayerName(userName);
           setNewPlayerPhone('');
           setShowPlayerProfileSetup(true);
         }
       } else {
-        // فحص حساب صاحب الملعب في Firestore
-        const existingPitch = pitchesList.find(p => p.ownerEmail === userEmail || (p.ownerEmail && p.id === `pitch-${uid}`));
+        const existingPitch = pitchesList.find(p => p.ownerEmail === userEmail || p.id === `pitch-${uid}`);
         if (existingPitch) {
           setCurrentUser({
             role: 'owner',
@@ -389,7 +386,6 @@ export default function Home() {
             pitchId: existingPitch.id
           });
         } else {
-          // صاحب ملعب جديد: فتح نافذة تحديد بيانات الملعب والمحافظة
           setOwnerTempAuth({ uid, name: userName, email: userEmail });
           setNewPitchName('');
           setNewPitchProvince('بغداد');
@@ -405,7 +401,6 @@ export default function Home() {
     }
   };
 
-  // حفظ بروفايل اللاعب الجديد
   const handleSavePlayerProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!playerTempAuth) return;
@@ -440,7 +435,6 @@ export default function Home() {
     }
   };
 
-  // حفظ بروفايل صاحب الملعب الجديد
   const handleSaveOwnerPitchProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ownerTempAuth) return;
@@ -491,7 +485,6 @@ export default function Home() {
     }
   };
 
-  // رفع صورة الملعب
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -500,14 +493,11 @@ export default function Home() {
         return;
       }
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setEditImage(reader.result as string);
-      };
+      reader.onloadend = () => setEditImage(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
 
-  // تفعيل التمديد الطارئ
   const handleActivateEmergencyExtension = async () => {
     if (!currentOwnerPitch) return;
     try {
@@ -631,12 +621,6 @@ export default function Home() {
     }
   };
 
-  const toggleHour24 = (hour: number) => {
-    setSelectedHours24(prev => 
-      prev.includes(hour) ? prev.filter(h => h !== hour) : [...prev, hour]
-    );
-  };
-
   if (!isClient) return null;
 
   const displayedPitches = pitchesList.filter(p => {
@@ -648,13 +632,11 @@ export default function Home() {
   return (
     <div dir="rtl" className="min-h-screen bg-slate-950 text-slate-100 font-sans p-3 md:p-8 flex flex-col justify-between relative">
       
-      {/* زر الواتساب العائم للدعم */}
       <a
         href={whatsappSupportUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="fixed bottom-5 left-5 z-40 bg-emerald-600 hover:bg-emerald-500 text-white p-3 md:px-4 md:py-3 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 border border-emerald-400/40"
-        title="تواصل مع الدعم الفني للمنظومة"
       >
         <Headphones className="w-5 h-5 text-white animate-pulse" />
         <span className="hidden md:inline text-xs font-black">الدعم الفني المباشر</span>
@@ -696,7 +678,6 @@ export default function Home() {
               <button
                 onClick={() => setShowLogoutConfirm(true)}
                 className="p-2 bg-slate-900 hover:bg-rose-950/60 border border-slate-800 text-slate-400 hover:text-rose-400 rounded-xl transition-all"
-                title="تسجيل الخروج"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -706,7 +687,6 @@ export default function Home() {
 
         <main className="max-w-5xl mx-auto mt-6">
 
-          {/* شاشة الدخول الحصرية: Google & Apple */}
           {currentUser.role === 'guest' && (
             <div className="py-10 md:py-16 max-w-md mx-auto space-y-6">
               <div className="text-center space-y-2">
@@ -714,7 +694,6 @@ export default function Home() {
                 <p className="text-xs text-slate-400">اختر هويتك وسجل دخولك بضغطة زر واحدة</p>
               </div>
 
-              {/* اختيار الدور */}
               <div className="bg-slate-900 p-1.5 rounded-2xl border border-slate-800 grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
@@ -742,7 +721,6 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* بطاقة الدخول الذكي */}
               <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                 <div className="text-center pb-2 border-b border-slate-800">
                   <h3 className="font-bold text-sm text-white">
@@ -757,7 +735,6 @@ export default function Home() {
                   </p>
                 )}
 
-                {/* زر Google */}
                 <button
                   type="button"
                   onClick={() => handleSocialAuth('google')}
@@ -773,7 +750,6 @@ export default function Home() {
                   {authLoading ? 'جارٍ تسجيل الدخول...' : 'متابعة عبر حساب Google'}
                 </button>
 
-                {/* زر Apple */}
                 <button
                   type="button"
                   onClick={() => handleSocialAuth('apple')}
@@ -789,7 +765,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* نافذة إكمال ملف اللاعب الجديد (اسم + رقم هاتف عراقي) */}
           {showPlayerProfileSetup && playerTempAuth && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
               <div className="bg-slate-900 border border-emerald-500/60 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-right">
@@ -845,7 +820,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* نافذة إكمال ملف صاحب الملعب الجديد */}
           {showOwnerPitchSetup && ownerTempAuth && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
               <div className="bg-slate-900 border border-amber-500/60 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-right">
@@ -919,7 +893,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* نافذة تعديل اسم اللاعب */}
           {showEditPlayerModal && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
               <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 space-y-4 text-right">
@@ -961,7 +934,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* 1. واجهة صاحب الملعب */}
           {currentUser.role === 'owner' && currentOwnerPitch && (
             <div>
               {currentOwnerPitch.subscriptionStatus === 'expired' ? (
@@ -991,9 +963,6 @@ export default function Home() {
                         {OFFICIAL_PAYMENT_PHONE}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-400">
-                      بعد التحويل إلى رقم المحفظة، اضغط لإرسال لقطة الشاشة عبر واتساب ليتم التفعيل الفوري.
-                    </p>
                   </div>
 
                   <div className="flex flex-col gap-3">
@@ -1001,30 +970,20 @@ export default function Home() {
                       href={whatsappRenewalUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg shadow-emerald-950"
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg"
                     >
                       إرسال سكرين شوت التحويل عبر واتساب ({OFFICIAL_PAYMENT_PHONE})
                     </a>
 
-                    {currentOwnerPitch.lastRenewDate !== '-' ? (
-                      !currentOwnerPitch.usedEmergencyExtension ? (
-                        <button
-                          type="button"
-                          onClick={handleActivateEmergencyExtension}
-                          className="w-full bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/60 text-amber-300 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
-                        >
-                          <Zap className="w-4 h-4 text-amber-400" />
-                          طلب تمديد طارئ (مهلة 24 ساعة لاستمرار الحجوزات)
-                        </button>
-                      ) : (
-                        <div className="text-[11px] text-slate-500 border border-slate-800 py-2 rounded-xl bg-slate-950">
-                          لقد استخدمت التمديد الطارئ لمرة واحدة مسبقاً، يرجى إتمام التحويل لتفعيل الشهر الجديد.
-                        </div>
-                      )
-                    ) : (
-                      <div className="text-[11px] text-slate-500 border border-slate-800 py-2 rounded-xl bg-slate-950">
-                        (هذا الحساب بانتظار الدفع الأول لاعتماده، التمديد الطارئ متاح فقط عند انتهاء اشتراك فعلي سابق)
-                      </div>
+                    {currentOwnerPitch.lastRenewDate !== '-' && !currentOwnerPitch.usedEmergencyExtension && (
+                      <button
+                        type="button"
+                        onClick={handleActivateEmergencyExtension}
+                        className="w-full bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/60 text-amber-300 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
+                      >
+                        <Zap className="w-4 h-4 text-amber-400" />
+                        طلب تمديد طارئ (مهلة 24 ساعة لاستمرار الحجوزات)
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1195,7 +1154,7 @@ export default function Home() {
                             />
                             <div className="space-y-2 w-full">
                               <label className="bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold px-4 py-2.5 rounded-xl text-xs cursor-pointer inline-flex items-center gap-2 border border-slate-700 transition-all">
-                                <Upload className="w-4 h-4" /> اختيار صورة من الاستوديو / الجهاز
+                                <Upload className="w-4 h-4" /> اختيار صورة من الجهاز
                                 <input 
                                   type="file" 
                                   accept="image/*" 
@@ -1207,7 +1166,7 @@ export default function Home() {
                                 type="url"
                                 value={editImage}
                                 onChange={(e) => setEditImage(e.target.value)}
-                                placeholder="أو اكتب رابط الصورة المباشر هنا..."
+                                placeholder="أو رابط الصورة..."
                                 className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white"
                               />
                             </div>
@@ -1280,7 +1239,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* 2. واجهة اللاعب */}
           {currentUser.role === 'player' && (
             <div>
               {!selectedPitchId ? (
@@ -1422,7 +1380,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* 3. لوحة الإدارة العامة المركزية (مع الإحصائيات الكاملة) */}
           {currentUser.role === 'admin' && (
             <div className="bg-slate-900 border border-blue-900/60 p-6 rounded-3xl space-y-6">
               <div className="flex items-center gap-2 text-blue-400 border-b border-slate-800 pb-3">
@@ -1430,7 +1387,6 @@ export default function Home() {
                 <h3 className="text-lg font-black text-white">لوحة الإدارة السحابية المركزية</h3>
               </div>
 
-              {/* بطاقات الإحصائيات الحية للـ Admin */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl flex items-center gap-3">
                   <div className="p-3 bg-emerald-950 border border-emerald-800 text-emerald-400 rounded-xl">
@@ -1465,7 +1421,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* قائمة الملاعب والتحكم بها */}
               <div className="space-y-4 pt-2">
                 <h4 className="font-bold text-sm text-slate-300">إدارة اشتراكات الملاعب:</h4>
                 {pitchesList.map(p => (
@@ -1557,7 +1512,6 @@ export default function Home() {
         </button>
       </footer>
 
-      {/* نافذة تأكيد حجز الموعد */}
       {selectedSlot && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 space-y-4">
@@ -1609,7 +1563,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* نافذة الحجز اليدوي لصاحب الملعب */}
       {ownerManualSlot && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-amber-800/80 w-full max-w-md rounded-2xl p-6 space-y-4">
@@ -1646,7 +1599,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* نافذة تفريغ الساعة */}
       {slotToConfirmCancel && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-rose-800 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-center">
@@ -1666,7 +1618,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* نافذة تفاصيل الحجز */}
       {viewDetailsSlot && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-6 space-y-4">
@@ -1708,7 +1659,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* نافذة دخول الإدارة المركزية النظيفة */}
       {showAdminModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-blue-900/80 w-full max-w-xs rounded-3xl p-6 space-y-4 text-center">
@@ -1760,7 +1710,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* نافذة تأكيد الخروج */}
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-4 text-center">
