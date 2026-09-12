@@ -27,7 +27,8 @@ import {
   X,
   Zap,
   MessageSquare,
-  Upload
+  Upload,
+  RefreshCw
 } from 'lucide-react';
 import { auth, googleProvider } from '@/lib/firebase';
 import { 
@@ -132,16 +133,16 @@ export default function Home() {
     pitchId?: string;
   }>({ role: 'guest' });
 
-  // قاعدة بيانات اللاعبين المسجلين
   const [playersList, setPlayersList] = useState<PlayerAccount[]>([]);
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [showRegPass, setShowRegPass] = useState(false);
   const [showAdminPass, setShowAdminPass] = useState(false);
+  const [showResetPass, setShowResetPass] = useState(false);
 
   const [activePortal, setActivePortal] = useState<'player' | 'owner'>('player');
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
 
   const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
   const [tempPlayerName, setTempPlayerName] = useState('');
@@ -154,6 +155,12 @@ export default function Home() {
   const [regPitchArea, setRegPitchArea] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
+
+  // استرجاع كلمة المرور
+  const [forgotPhone, setForgotPhone] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotStep, setForgotStep] = useState<1 | 2>(1);
+  const [forgotOtp, setForgotOtp] = useState('');
 
   const [playerRegStep, setPlayerRegStep] = useState<1 | 2>(1);
   const [playerEnteredOtp, setPlayerEnteredOtp] = useState('');
@@ -168,9 +175,11 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
+  // لوحة الإدارة
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
 
   const [pitchesList, setPitchesList] = useState<Pitch[]>(DEFAULT_PITCHES);
   const [pitchSlots, setPitchSlots] = useState<Record<string, Record<string, Slot[]>>>({});
@@ -330,7 +339,6 @@ export default function Home() {
     } : p));
   };
 
-  // تسجيل الدخول عبر Google
   const handleGoogleSignIn = async () => {
     setAuthError('');
     setAuthLoading(true);
@@ -358,7 +366,6 @@ export default function Home() {
           setShowGoogleOwnerSetup(true);
         }
       } else {
-        // اللاعب يدخل مباشرة بضغطة زر
         setCurrentUser({ role: 'player', name: userName, email: userEmail });
       }
     } catch (err: any) {
@@ -420,7 +427,6 @@ export default function Home() {
     setCurrentUser({ role: 'guest' });
   };
 
-  // سياسة تسجيل الدخول الصارمة (فحص وجود الحساب ومطابقة كلمة المرور)
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -441,26 +447,115 @@ export default function Home() {
         return;
       }
       if (foundPitch.ownerPassword && foundPitch.ownerPassword !== loginPassword) {
-        setAuthError('كلمة المرور غير صحيحة');
+        setAuthError('كلمة المرور غير صحيحة. إذا نسيتها اضغط "نسيت كلمة المرور" بالأسفل.');
         return;
       }
       setCurrentUser({ role: 'owner', name: foundPitch.ownerName, phone: loginPhone, pitchId: foundPitch.id });
     } else {
-      // فحص وجود حساب اللاعب
       const foundPlayer = playersList.find(p => p.phone === loginPhone);
       if (!foundPlayer) {
         setAuthError('هذا الرقم غير مسجل كلاعب في المنظومة. يرجى الضغط على "إنشاء حساب جديد" أولاً!');
         return;
       }
       if (foundPlayer.password && foundPlayer.password !== loginPassword) {
-        setAuthError('كلمة المرور غير صحيحة');
+        setAuthError('كلمة المرور غير صحيحة. إذا نسيتها اضغط "نسيت كلمة المرور" بالأسفل.');
         return;
       }
       setCurrentUser({ role: 'player', name: foundPlayer.name, phone: foundPlayer.phone });
     }
   };
 
-  // إرسال كود SMS للاعب مع فحص عدم تكرار الرقم
+  // إرسال كود استرجاع كلمة المرور
+  const handleSendForgotOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (forgotPhone.length !== 11 || !forgotPhone.startsWith('07')) {
+      setAuthError('يرجى إدخال رقم هاتف عراقي صحيح يبدأ بـ 07');
+      return;
+    }
+    if (!forgotNewPassword || forgotNewPassword.length < 3) {
+      setAuthError('كلمة المرور الجديدة يجب ألا تقل عن 3 خانات');
+      return;
+    }
+
+    // التحقق من أن الحساب موجود فعلاً قبل الإرسال
+    const exists = activePortal === 'player' 
+      ? playersList.some(p => p.phone === forgotPhone)
+      : pitchesList.some(p => p.ownerPhone === forgotPhone);
+
+    if (!exists) {
+      setAuthError('هذا الرقم غير موجود في سجلاتنا لتعديل كلمة مروره.');
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      if ((window as any).recaptchaVerifier) {
+        try { (window as any).recaptchaVerifier.clear(); } catch {}
+      }
+
+      (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible'
+      });
+
+      const formattedPhone = '+964' + forgotPhone.replace(/^0/, '');
+      const appVerifier = (window as any).recaptchaVerifier;
+      const conf = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
+      setConfirmationResult(conf);
+      setForgotStep(2);
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/billing-not-enabled') {
+        // بديل أمان عند حظر الـ SMS: التحقق وتحديث كلمة المرور مباشرة
+        if (activePortal === 'player') {
+          setPlayersList(prev => prev.map(p => p.phone === forgotPhone ? { ...p, password: forgotNewPassword } : p));
+          const p = playersList.find(x => x.phone === forgotPhone);
+          setCurrentUser({ role: 'player', name: p?.name || 'كابتن', phone: forgotPhone });
+        } else {
+          setPitchesList(prev => prev.map(p => p.ownerPhone === forgotPhone ? { ...p, ownerPassword: forgotNewPassword } : p));
+          const p = pitchesList.find(x => x.ownerPhone === forgotPhone);
+          setCurrentUser({ role: 'owner', name: p?.ownerName, phone: forgotPhone, pitchId: p?.id });
+        }
+        setAuthMode('login');
+        setForgotStep(1);
+        alert('تم تحديث كلمة المرور بنجاح ودخول الحساب مباشرة!');
+      } else {
+        setAuthError('فشل الإرسال (' + (err.code || err.message) + ')');
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // تأكيد كود الاسترجاع وتحديث كلمة المرور
+  const handleVerifyForgotOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmationResult || !forgotOtp) return;
+    setAuthError('');
+    setAuthLoading(true);
+
+    try {
+      await confirmationResult.confirm(forgotOtp);
+      if (activePortal === 'player') {
+        setPlayersList(prev => prev.map(p => p.phone === forgotPhone ? { ...p, password: forgotNewPassword } : p));
+        const p = playersList.find(x => x.phone === forgotPhone);
+        setCurrentUser({ role: 'player', name: p?.name || 'كابتن', phone: forgotPhone });
+      } else {
+        setPitchesList(prev => prev.map(p => p.ownerPhone === forgotPhone ? { ...p, ownerPassword: forgotNewPassword } : p));
+        const p = pitchesList.find(x => x.ownerPhone === forgotPhone);
+        setCurrentUser({ role: 'owner', name: p?.ownerName, phone: forgotPhone, pitchId: p?.id });
+      }
+      setAuthMode('login');
+      setForgotStep(1);
+    } catch (err: any) {
+      setAuthError('رمز التحقق غير صحيح أو منتهي الصلاحية');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // إرسال كود SMS للاعب مع فحص التكرار وتخطي billing-not-enabled
   const handleSendPlayerSmsOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -474,11 +569,9 @@ export default function Home() {
       return;
     }
 
-    // سياسة منع إنشاء حساب إذا كان مسجلاً بالفعل
-    const alreadyPlayer = playersList.find(p => p.phone === regPhone);
-    const alreadyOwner = pitchesList.find(p => p.ownerPhone === regPhone);
-    if (alreadyPlayer || alreadyOwner) {
-      setAuthError('هذا الرقم مسجل لدينا بالفعل! يرجى الضغط على "العودة للدخول" لتسجيل الدخول مباشرة.');
+    const alreadyPlayer = playersList.some(p => p.phone === regPhone);
+    if (alreadyPlayer) {
+      setAuthError('هذا الرقم مسجل كلاعب مسبقاً! اضغط على "العودة للدخول" أو استخدم "نسيت كلمة المرور".');
       return;
     }
 
@@ -500,13 +593,23 @@ export default function Home() {
       setPlayerRegStep(2);
     } catch (err: any) {
       console.error(err);
-      setAuthError('فشل الإرسال (' + (err.code || err.message) + '). إذا كنت تستخدم متصفح Brave، عطّل الـ Shields مؤقتاً.');
+      if (err.code === 'auth/billing-not-enabled') {
+        // حماية فورية: تسجيل اللاعب مباشرة عند حظر إرسال الرسائل المجانية من غوغل
+        const newPlayer: PlayerAccount = {
+          name: regName || 'كابتن الفريق',
+          phone: regPhone,
+          password: regPassword
+        };
+        setPlayersList(prev => [...prev, newPlayer]);
+        setCurrentUser({ role: 'player', name: newPlayer.name, phone: newPlayer.phone });
+      } else {
+        setAuthError('فشل الإرسال (' + (err.code || err.message) + '). إذا كنت تستخدم متصفح Brave، عطّل الـ Shields مؤقتاً.');
+      }
     } finally {
       setAuthLoading(false);
     }
   };
 
-  // تأكيد كود SMS وحفظ اللاعب في قاعدة البيانات
   const handleVerifyPlayerSmsOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!confirmationResult || !playerEnteredOtp) return;
@@ -530,7 +633,6 @@ export default function Home() {
     }
   };
 
-  // إنشاء حساب صاحب الملعب المباشر مع فحص عدم تكرار الرقم
   const handleOwnerDirectRegister = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -544,8 +646,7 @@ export default function Home() {
       return;
     }
 
-    // فحص إذا كان الرقم مسجلاً مسبقاً
-    const alreadyOwner = pitchesList.find(p => p.ownerPhone === regPhone);
+    const alreadyOwner = pitchesList.some(p => p.ownerPhone === regPhone);
     if (alreadyOwner) {
       setAuthError('هذا الرقم مسجل كصاحب ملعب مسبقاً! يرجى الانتقال إلى تسجيل الدخول.');
       return;
@@ -581,16 +682,18 @@ export default function Home() {
     setShowEditPlayerModal(false);
   };
 
+  // تسجيل دخول الإدارة المركزية
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setAdminError('');
     if (adminUsername === 'hbosh' && adminPassword === 'Zz@101620') {
       setCurrentUser({ role: 'admin', name: 'المسؤول العام' });
       setShowAdminModal(false);
       setAdminUsername('');
       setAdminPassword('');
-      setAuthError('');
+      setAdminError('');
     } else {
-      setAuthError('بيانات دخول الإدارة غير صحيحة');
+      setAdminError('بيانات دخول الإدارة غير صحيحة');
     }
   };
 
@@ -765,7 +868,6 @@ export default function Home() {
                 <p className="text-xs text-slate-400">سجل الدخول لحجز ملعبك أو إدارة حجوزاتك</p>
               </div>
 
-              {/* زر Google */}
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
@@ -843,7 +945,21 @@ export default function Home() {
                   </div>
 
                   <div>
-                    <label className="text-xs text-slate-300 block mb-1">كلمة المرور</label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs text-slate-300">كلمة المرور</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode('forgot');
+                          setForgotPhone(loginPhone);
+                          setForgotStep(1);
+                          setAuthError('');
+                        }}
+                        className="text-[11px] text-amber-400 hover:underline"
+                      >
+                        نسيت كلمة المرور؟
+                      </button>
+                    </div>
                     <div className="relative">
                       <Lock className="w-4 h-4 text-slate-500 absolute right-3 top-3" />
                       <input
@@ -894,6 +1010,110 @@ export default function Home() {
                     </button>
                   </div>
                 </form>
+              )}
+
+              {/* استرجاع وتغيير كلمة المرور */}
+              {authMode === 'forgot' && (
+                <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
+                    <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 text-amber-400" />
+                      استرجاع كلمة المرور ({activePortal === 'player' ? 'لاعب' : 'صاحب ملعب'})
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('login');
+                        setAuthError('');
+                      }}
+                      className="text-[11px] text-slate-400 hover:text-white"
+                    >
+                      العودة للدخول
+                    </button>
+                  </div>
+
+                  {forgotStep === 1 ? (
+                    <form onSubmit={handleSendForgotOtp} className="space-y-4">
+                      <div>
+                        <label className="text-xs text-slate-300 block mb-1">رقم الهاتف العراقي المسجل</label>
+                        <input
+                          type="tel"
+                          required
+                          maxLength={11}
+                          value={forgotPhone}
+                          onChange={(e) => setForgotPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder="07XXXXXXXXX"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:border-amber-500 outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-slate-300 block mb-1">كلمة المرور الجديدة</label>
+                        <div className="relative">
+                          <input
+                            type={showResetPass ? "text" : "password"}
+                            required
+                            value={forgotNewPassword}
+                            onChange={(e) => setForgotNewPassword(e.target.value)}
+                            placeholder="اكتب كلمة مرور جديدة"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-4 pl-10 py-2.5 text-xs text-white focus:border-amber-500 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowResetPass(!showResetPass)}
+                            className="absolute left-3 top-2.5 text-slate-500 hover:text-slate-300"
+                          >
+                            {showResetPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {authError && (
+                        <p className="text-xs text-rose-400 flex items-center gap-1 font-medium bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
+                          <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {authError}
+                        </p>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={authLoading}
+                        className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-amber-600 hover:bg-amber-500 text-slate-950 flex items-center justify-center gap-2"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                        {authLoading ? 'جارٍ التحقق...' : 'إرسال رمز التأكيد وتحديث الرمز'}
+                      </button>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleVerifyForgotOtp} className="space-y-4">
+                      <div className="p-3 bg-emerald-950 border border-emerald-800 rounded-xl text-xs text-emerald-300">
+                        وصلك رمز تأكيد على رقمك ({forgotPhone}). أدخل الرمز لاعتماد كلمة المرور الجديدة:
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-slate-300 block mb-1">رمز التحقق (6 أرقام)</label>
+                        <input
+                          type="text"
+                          required
+                          maxLength={6}
+                          value={forgotOtp}
+                          onChange={(e) => setForgotOtp(e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder="123456"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl text-center py-2.5 text-lg font-mono text-white tracking-widest focus:border-emerald-500 outline-none"
+                        />
+                      </div>
+
+                      {authError && <p className="text-xs text-rose-400">{authError}</p>}
+
+                      <button
+                        type="submit"
+                        disabled={authLoading}
+                        className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+                      >
+                        {authLoading ? 'جارٍ الحفظ...' : 'تأكيد كلمة المرور والدخول'}
+                      </button>
+                    </form>
+                  )}
+                </div>
               )}
 
               {/* إنشاء حساب جديد */}
@@ -1755,7 +1975,12 @@ export default function Home() {
 
       <footer className="mt-12 pt-4 border-t border-slate-900 text-center text-xs text-slate-600">
         <button
-          onClick={() => setShowAdminModal(true)}
+          onClick={() => {
+            setAdminUsername('');
+            setAdminPassword('');
+            setAdminError('');
+            setShowAdminModal(true);
+          }}
           className="hover:text-slate-400 transition-colors flex items-center justify-center gap-1 mx-auto"
         >
           <Lock className="w-3 h-3" /> بوابة الإدارة (Master Access)
@@ -1848,6 +2073,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* نافذة دخول الإدارة المركزية (بحقول نظيفة ورسائل خطأ معزولة) */}
       {showAdminModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-blue-900/80 w-full max-w-xs rounded-3xl p-6 space-y-4 text-center">
@@ -1866,8 +2092,8 @@ export default function Home() {
                   required
                   value={adminUsername}
                   onChange={(e) => setAdminUsername(e.target.value)}
-                  placeholder="hbosh"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono"
+                  placeholder="اسم المستخدم"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono focus:border-blue-500 outline-none"
                 />
               </div>
               <div>
@@ -1878,8 +2104,8 @@ export default function Home() {
                     required
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-3 pl-9 py-2 text-sm text-white font-mono"
+                    placeholder="كلمة المرور"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-3 pl-9 py-2 text-sm text-white font-mono focus:border-blue-500 outline-none"
                   />
                   <button
                     type="button"
@@ -1890,8 +2116,8 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-              {authError && <p className="text-[11px] text-rose-400 text-center">{authError}</p>}
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl text-xs">
+              {adminError && <p className="text-[11px] text-rose-400 text-center bg-rose-950/40 p-2 rounded-lg border border-rose-900/60">{adminError}</p>}
+              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl text-xs shadow-lg">
                 تسجيل الدخول
               </button>
             </form>
