@@ -8,6 +8,6 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ success: false, message: 'اسم المستخدم أو الكود السري غير صحيح' }, { status: 401 });
   } catch {
-    return NextResponse.json({ success: false, message: 'خطأ في الخادم' }, { status: 500 });
+    return NextResponse.json({ success: false, message: 'حدث خطأ في الخادم' }, { status: 500 });
   }
 }
