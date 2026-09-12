@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Calendar as CalendarIcon, 
   Clock, 
@@ -9,33 +9,22 @@ import {
   CheckCircle2, 
   Lock, 
   Sparkles, 
-  TrendingUp, 
   MessageCircle, 
   AlertTriangle, 
-  Zap, 
-  Search, 
   MapPin, 
-  Star, 
   Edit3, 
   ArrowRight, 
   ShieldCheck, 
-  Ban, 
-  Plus, 
   PhoneCall, 
   Compass, 
   LayoutDashboard, 
-  Sliders, 
-  DollarSign, 
   UserPlus, 
   Eye, 
   Trash2, 
-  X,
-  CheckSquare,
-  Square,
-  LogOut,
-  KeyRound,
-  ShieldAlert,
-  ArrowLeft
+  CheckSquare, 
+  Square, 
+  LogOut, 
+  KeyRound 
 } from 'lucide-react';
 
 interface Slot {
@@ -56,49 +45,70 @@ interface Pitch {
   type: string;
   ownerName: string;
   ownerPhone: string;
+  ownerPassword?: string;
   defaultPricePerHour: number;
-  rating: number;
   imageUrl: string;
   bio: string;
-  features: string[];
-  subscriptionStatus: 'active' | 'expired' | 'emergency';
+  subscriptionStatus: 'active' | 'expired';
   subscriptionDaysLeft: number;
   lastRenewDate: string;
-  emergencyUsedInCurrentCycle: boolean;
 }
 
 const MASTER_24_HOURS = [
-  { h: 0, label: '12:00 ص - 01:00 ص', period: 'ليل' },
-  { h: 1, label: '01:00 ص - 02:00 ص', period: 'ليل' },
-  { h: 2, label: '02:00 ص - 03:00 ص', period: 'ليل' },
-  { h: 3, label: '03:00 ص - 04:00 ص', period: 'فجر' },
-  { h: 4, label: '04:00 ص - 05:00 ص', period: 'فجر' },
-  { h: 5, label: '05:00 ص - 06:00 ص', period: 'صباح' },
-  { h: 6, label: '06:00 ص - 07:00 ص', period: 'صباح' },
-  { h: 7, label: '07:00 ص - 08:00 ص', period: 'صباح' },
-  { h: 8, label: '08:00 ص - 09:00 ص', period: 'صباح' },
-  { h: 9, label: '09:00 ص - 10:00 ص', period: 'صباح' },
-  { h: 10, label: '10:00 ص - 11:00 ص', period: 'صباح' },
-  { h: 11, label: '11:00 ص - 12:00 م', period: 'ظهر' },
-  { h: 12, label: '12:00 م - 01:00 م', period: 'ظهر' },
-  { h: 13, label: '01:00 م - 02:00 م', period: 'ظهر' },
-  { h: 14, label: '02:00 م - 03:00 م', period: 'عصر' },
-  { h: 15, label: '03:00 م - 04:00 م', period: 'عصر' },
-  { h: 16, label: '04:00 م - 05:00 م', period: 'عصر' },
-  { h: 17, label: '05:00 م - 06:00 م', period: 'مساء' },
-  { h: 18, label: '06:00 م - 07:00 م', period: 'مساء' },
-  { h: 19, label: '07:00 م - 08:00 م', period: 'مساء' },
-  { h: 20, label: '08:00 م - 09:00 م', period: 'مساء' },
-  { h: 21, label: '09:00 م - 10:00 م', period: 'ليل' },
-  { h: 22, label: '10:00 م - 11:00 م', period: 'ليل' },
-  { h: 23, label: '11:00 م - 12:00 ص', period: 'ليل' },
+  { h: 0, label: '12:00 ص - 01:00 ص' },
+  { h: 1, label: '01:00 ص - 02:00 ص' },
+  { h: 2, label: '02:00 ص - 03:00 ص' },
+  { h: 3, label: '03:00 ص - 04:00 ص' },
+  { h: 4, label: '04:00 ص - 05:00 ص' },
+  { h: 5, label: '05:00 ص - 06:00 ص' },
+  { h: 6, label: '06:00 ص - 07:00 ص' },
+  { h: 7, label: '07:00 ص - 08:00 ص' },
+  { h: 8, label: '08:00 ص - 09:00 ص' },
+  { h: 9, label: '09:00 ص - 10:00 ص' },
+  { h: 10, label: '10:00 ص - 11:00 ص' },
+  { h: 11, label: '11:00 ص - 12:00 م' },
+  { h: 12, label: '12:00 م - 01:00 م' },
+  { h: 13, label: '01:00 م - 02:00 م' },
+  { h: 14, label: '02:00 م - 03:00 م' },
+  { h: 15, label: '03:00 م - 04:00 م' },
+  { h: 16, label: '04:00 م - 05:00 م' },
+  { h: 17, label: '05:00 م - 06:00 م' },
+  { h: 18, label: '06:00 م - 07:00 م' },
+  { h: 19, label: '07:00 م - 08:00 م' },
+  { h: 20, label: '08:00 م - 09:00 م' },
+  { h: 21, label: '09:00 م - 10:00 م' },
+  { h: 22, label: '10:00 م - 11:00 م' },
+  { h: 23, label: '11:00 م - 12:00 ص' },
+];
+
+const DEFAULT_PITCHES: Pitch[] = [
+  {
+    id: 'pitch-legend-1',
+    name: 'ملعب الأساطير الدولي',
+    area: 'المنصور - شارع 14 رمضان',
+    city: 'بغداد',
+    type: 'خماسي ثيل تركي درجة أولى',
+    ownerName: 'كابتن hbosh',
+    ownerPhone: '07800000000',
+    ownerPassword: '123',
+    defaultPricePerHour: 20000,
+    imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
+    bio: 'أحدث ساحة خماسية في المنصور، كشافات إضاءة نهارية، كافتيريا وغرف تبديل مع دوش حار وبارد، بارك سيارات مراقب.',
+    subscriptionStatus: 'active',
+    subscriptionDaysLeft: 30,
+    lastRenewDate: '2026-09-01'
+  }
 ];
 
 export default function Home() {
+  const [isClient, setIsClient] = useState(false);
+
+  // حالة الجلسة
   const [currentUser, setCurrentUser] = useState<{
     role: 'guest' | 'player' | 'owner' | 'admin';
     name?: string;
     phone?: string;
+    pitchId?: string;
   }>({ role: 'guest' });
 
   const [activePortal, setActivePortal] = useState<'player' | 'owner'>('player');
@@ -120,48 +130,32 @@ export default function Home() {
   const [authMsg, setAuthMsg] = useState('');
   const [authError, setAuthError] = useState('');
 
+  // لوحة الإدارة العامة
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
 
+  // قائمة الملاعب والحجوزات المعزولة
+  const [pitchesList, setPitchesList] = useState<Pitch[]>(DEFAULT_PITCHES);
+  const [pitchSlots, setPitchSlots] = useState<Record<string, Record<string, Slot[]>>>({});
+
+  // تفاصيل البروفايل الخاص بصاحب الملعب
   const [ownerTab, setOwnerTab] = useState<'bookings' | 'profile'>('bookings');
-
-  const [pitchesList, setPitchesList] = useState<Pitch[]>([
-    {
-      id: 'p-1',
-      name: 'ملعب الأساطير الدولي',
-      area: 'المنصور - شارع 14 رمضان',
-      city: 'بغداد',
-      type: 'خماسي ثيل تركي درجة أولى',
-      ownerName: 'كابتن hbosh',
-      ownerPhone: '07800000000',
-      defaultPricePerHour: 20000,
-      rating: 4.9,
-      imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
-      bio: 'أحدث ساحة خماسية في المنصور، ثيل هولندي معتمد، كشافات ليد إضاءة نهارية، كافتيريا وغرف تبديل مع دوش حار وبارد، بارك سيارات مخصص ومراقب.',
-      features: ['ثيل عالي الجودة', 'إنارة ليد دولية', 'كافتيريا وعصائر', 'غرف تبديل وتبريد', 'كراج سيارات'],
-      subscriptionStatus: 'active',
-      subscriptionDaysLeft: 30,
-      lastRenewDate: '2026-09-01',
-      emergencyUsedInCurrentCycle: false
-    }
-  ]);
-
-  const pitch = pitchesList[0] || null;
-
-  const [editName, setEditName] = useState(pitch?.name || '');
-  const [editArea, setEditArea] = useState(pitch?.area || '');
-  const [editBio, setEditBio] = useState(pitch?.bio || '');
-  const [editImage, setEditImage] = useState(pitch?.imageUrl || '');
+  const [editName, setEditName] = useState('');
+  const [editArea, setEditArea] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editImage, setEditImage] = useState('');
   const [profileSavedToast, setProfileSavedToast] = useState(false);
 
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
-
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
+
+  // حجز اللاعب
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [bookingCaptainName, setBookingCaptainName] = useState('');
   const [bookingCaptainPhone, setBookingCaptainPhone] = useState('');
 
+  // حجز صاحب الملعب اليدوي
   const [ownerManualSlot, setOwnerManualSlot] = useState<Slot | null>(null);
   const [ownerTeamName, setOwnerTeamName] = useState('');
   const [ownerTeamPhone, setOwnerTeamPhone] = useState('');
@@ -169,19 +163,54 @@ export default function Home() {
   const [viewDetailsSlot, setViewDetailsSlot] = useState<Slot | null>(null);
   const [slotToConfirmCancel, setSlotToConfirmCancel] = useState<Slot | null>(null);
 
+  // نظام التأكيد المزدوج للإدارة
+  const [targetActionPitchId, setTargetActionPitchId] = useState<string | null>(null);
   const [adminConfirmAction, setAdminConfirmAction] = useState<'renew' | 'expire' | 'delete' | null>(null);
 
   const [selectedHours24, setSelectedHours24] = useState<number[]>([16, 17, 18, 19, 20, 21, 22, 23, 0]);
-  const [scheduleTargetDateStr, setScheduleTargetDateStr] = useState('');
   const [schedulePrice, setSchedulePrice] = useState(20000);
-  const [applyToAllDays, setApplyToAllDays] = useState(true);
-
   const [revenueFilter, setRevenueFilter] = useState<'daily' | 'monthly'>('daily');
 
   const adminWhatsAppNumber = "9647800000000";
   const zainCashWalletNumber = "0780XXXXXXX";
 
-  // إظهار الشهر بجانب اليوم لكي لا يدوخ اللاعبون
+  // استرجاع البيانات المحفوظة عند فتح الموقع
+  useEffect(() => {
+    setIsClient(true);
+    try {
+      const savedPitches = localStorage.getItem('la3batna_pitches');
+      if (savedPitches) setPitchesList(JSON.parse(savedPitches));
+
+      const savedSlots = localStorage.getItem('la3batna_slots');
+      if (savedSlots) setPitchSlots(JSON.parse(savedSlots));
+
+      const savedUser = localStorage.getItem('la3batna_user');
+      if (savedUser) setCurrentUser(JSON.parse(savedUser));
+    } catch {
+      // التعامل الآمن مع التخزين
+    }
+  }, []);
+
+  // حفظ التغييرات تلقائياً في LocalStorage
+  useEffect(() => {
+    if (isClient) {
+      localStorage.setItem('la3batna_pitches', JSON.stringify(pitchesList));
+    }
+  }, [pitchesList, isClient]);
+
+  useEffect(() => {
+    if (isClient) {
+      localStorage.setItem('la3batna_slots', JSON.stringify(pitchSlots));
+    }
+  }, [pitchSlots, isClient]);
+
+  useEffect(() => {
+    if (isClient) {
+      localStorage.setItem('la3batna_user', JSON.stringify(currentUser));
+    }
+  }, [currentUser, isClient]);
+
+  // التواريخ للأيام الـ 14 القادمة
   const dateOptions = useMemo(() => {
     const days = [];
     const arabicDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
@@ -201,203 +230,265 @@ export default function Home() {
 
   const selectedDate = dateOptions[selectedDateIndex];
 
-  const generateSlotsFromHours = (hoursList: number[], price: number, dateStr: string): Slot[] => {
-    const sorted = [...hoursList].sort((a, b) => a - b);
-    return sorted.map((h) => {
-      const masterObj = MASTER_24_HOURS.find(m => m.h === h)!;
+  // توليد ساعات الملعب
+  const generateSlots = (hours: number[], price: number, dateStr: string): Slot[] => {
+    return [...hours].sort((a, b) => a - b).map(h => {
+      const found = MASTER_24_HOURS.find(m => m.h === h)!;
       return {
         id: `${dateStr}-${h}`,
         hourNumber: h,
-        time: masterObj.label,
+        time: found.label,
         isBooked: false,
-        price: price
+        price
       };
     });
   };
 
-  const [allSlots, setAllSlots] = useState<Record<string, Slot[]>>(() => {
-    const initial: Record<string, Slot[]> = {};
-    const defaultHours = [16, 17, 18, 19, 20, 21, 22, 23, 0];
-    dateOptions.forEach((d, dIdx) => {
-      const slots = generateSlotsFromHours(defaultHours, 20000, d.dateStr);
-      if (dIdx === 0 && slots.length > 2) {
-        slots[1] = { ...slots[1], isBooked: true, bookedBy: 'كابتن سرمد', phone: '07701234567' };
-        slots[3] = { ...slots[3], isBooked: true, bookedBy: 'فريق النسور', phone: '07809876543' };
-      }
-      initial[d.dateStr] = slots;
-    });
-    return initial;
-  });
+  const currentOwnerPitch = pitchesList.find(p => p.id === currentUser.pitchId) || pitchesList[0];
+  const activePitchForPlayer = pitchesList.find(p => p.id === selectedPitchId);
 
-  const currentDaySlots = allSlots[selectedDate.dateStr] || [];
+  // تحديث الحقول التلقائي لبيانات البروفايل
+  useEffect(() => {
+    if (currentOwnerPitch) {
+      setEditName(currentOwnerPitch.name);
+      setEditArea(currentOwnerPitch.area);
+      setEditBio(currentOwnerPitch.bio);
+      setEditImage(currentOwnerPitch.imageUrl);
+      setSchedulePrice(currentOwnerPitch.defaultPricePerHour);
+    }
+  }, [currentOwnerPitch?.id]);
+
+  // جلب ساعات اليوم المحدد للملعب الحالي
+  const activeWorkingPitchId = currentUser.role === 'owner' ? currentOwnerPitch?.id : selectedPitchId;
+  const currentDaySlots = useMemo(() => {
+    if (!activeWorkingPitchId) return [];
+    const pitchDayData = pitchSlots[activeWorkingPitchId]?.[selectedDate.dateStr];
+    if (pitchDayData) return pitchDayData;
+    return generateSlots(selectedHours24, schedulePrice, selectedDate.dateStr);
+  }, [activeWorkingPitchId, selectedDate.dateStr, pitchSlots, selectedHours24, schedulePrice]);
+
   const currentDayBookedCount = currentDaySlots.filter(s => s.isBooked).length;
   const currentDayRevenue = currentDaySlots.filter(s => s.isBooked).reduce((sum, s) => sum + s.price, 0);
 
-  const totalMonthlyRevenue = Object.values(allSlots).flat().filter(s => s.isBooked).reduce((sum, s) => sum + s.price, 0) + (26 * 20000);
+  const totalMonthlyRevenue = useMemo(() => {
+    if (!activeWorkingPitchId || !pitchSlots[activeWorkingPitchId]) return 320000;
+    const allPBookings = Object.values(pitchSlots[activeWorkingPitchId]).flat().filter(s => s.isBooked);
+    return allPBookings.reduce((sum, s) => sum + s.price, 0) + 320000;
+  }, [activeWorkingPitchId, pitchSlots]);
 
   const whatsappUrl = `https://wa.me/${adminWhatsAppNumber}?text=${encodeURIComponent(
-    `مرحباً إدارة لعبتنا ⚽\nأنا كابتن (${pitch?.name || 'الملعب'}). حولت مبلغ الاشتراك عبر زين كاش.\nمرفق لكم سكرين شوت التحويل 📸👇`
+    `مرحباً إدارة لعبتنا ⚽\nأنا صاحب ملعب (${currentOwnerPitch?.name || 'الملعب'}). حولت مبلغ الاشتراك عبر زين كاش.\nمرفق لكم سكرين شوت التحويل 📸👇`
   )}`;
 
+  // تسجيل الدخول
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (loginPhone.length !== 11 || !loginPhone.startsWith('07')) {
-      setAuthError('يرجى إدخال رقم هاتف عراقي صحيح (11 رقماً يبدأ بـ 07)');
+      setAuthError('يرجى كتابة رقم هاتف عراقي سليم (11 رقم يبدأ بـ 07)');
       return;
     }
     if (!loginPassword) {
-      setAuthError('أدخل كلمة المرور');
+      setAuthError('يرجى إدخال كلمة المرور');
       return;
     }
 
+    if (activePortal === 'owner') {
+      const foundPitch = pitchesList.find(p => p.ownerPhone === loginPhone);
+      if (!foundPitch) {
+        setAuthError('هذا الرقم غير مسجل كصاحب ملعب. أنشئ حسابك أولاً!');
+        return;
+      }
+      setCurrentUser({
+        role: 'owner',
+        name: foundPitch.ownerName,
+        phone: loginPhone,
+        pitchId: foundPitch.id
+      });
+    } else {
+      setCurrentUser({
+        role: 'player',
+        name: 'كابتن الفريق',
+        phone: loginPhone
+      });
+    }
     setAuthError('');
-    setCurrentUser({
-      role: activePortal,
-      name: activePortal === 'player' ? 'كابتن الفريق' : (pitch?.name || 'صاحب الملعب'),
-      phone: loginPhone
-    });
   };
 
+  // إنشاء حساب جديد
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (regPhone.length !== 11 || !regPhone.startsWith('07')) {
-      setAuthError('يرجى إدخال رقم هاتف عراقي مكون من 11 رقماً');
+      setAuthError('يرجى كتابة رقم هاتف عراقي مكون من 11 رقماً');
       return;
     }
-    if (!regPassword || regPassword.length < 4) {
-      setAuthError('كلمة المرور يجب أن تكون 4 خانات على الأقل');
+    if (!regPassword || regPassword.length < 3) {
+      setAuthError('كلمة المرور يجب ألا تقل عن 3 خانات');
       return;
     }
 
     setAuthError('');
     if (activePortal === 'owner') {
-      const newPitchObj: Pitch = {
-        id: 'p-' + Date.now(),
+      const newId = 'pitch-' + Date.now();
+      const newPitch: Pitch = {
+        id: newId,
         name: regPitchName || 'ملعب جديد',
         area: 'بغداد',
         city: 'بغداد',
-        type: 'خماسي',
+        type: 'خماسي دولي',
         ownerName: regName || 'صاحب الملعب',
         ownerPhone: regPhone,
+        ownerPassword: regPassword,
         defaultPricePerHour: 20000,
-        rating: 5.0,
         imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
-        bio: 'ملعب جديد مجهز بالكامل.',
-        features: ['ثيل صناعي'],
+        bio: 'ملعب خماسي مجهز بالكامل.',
         subscriptionStatus: 'expired',
         subscriptionDaysLeft: 0,
-        lastRenewDate: '-',
-        emergencyUsedInCurrentCycle: false
+        lastRenewDate: '-'
       };
-      setPitchesList([newPitchObj]);
+      setPitchesList(prev => [...prev, newPitch]);
+      setCurrentUser({
+        role: 'owner',
+        name: regName,
+        phone: regPhone,
+        pitchId: newId
+      });
+    } else {
+      setCurrentUser({
+        role: 'player',
+        name: regName || 'كابتن الفريق',
+        phone: regPhone
+      });
     }
-
-    setCurrentUser({
-      role: activePortal,
-      name: regName || (activePortal === 'player' ? 'كابتن الفريق' : 'صاحب الملعب'),
-      phone: regPhone
-    });
   };
 
+  // استرجاع كلمة السر
   const handleSendWhatsAppOtp = (e: React.FormEvent) => {
     e.preventDefault();
     if (forgotPhone.length !== 11 || !forgotPhone.startsWith('07')) {
-      setAuthError('يرجى إدخال رقم هاتف عراقي صحيح (11 رقماً)');
+      setAuthError('يرجى إدخال رقم هاتف عراقي صحيح');
       return;
     }
-
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setGeneratedOtp(code);
     setAuthError('');
-    setAuthMsg(`تم إرسال كود التأكيد (6 أرقام) إلى واتساب رقمك: ${forgotPhone}`);
+    setAuthMsg(`تم إنشاء رمز التأكيد: ${code}`);
     setForgotStep(2);
 
-    const waOtpLink = `https://wa.me/964${forgotPhone.replace(/^0/, '')}?text=${encodeURIComponent(
-      `رمز استعادة كلمة السر لمنصة لعبتنا هو: ${code}\nلا تشارك هذا الرمز مع أي شخص.`
-    )}`;
-    window.open(waOtpLink, '_blank');
+    window.open(
+      `https://wa.me/964${forgotPhone.replace(/^0/, '')}?text=${encodeURIComponent(
+        `رمز استعادة كلمة السر لمنصة لعبتنا: ${code}`
+      )}`,
+      '_blank'
+    );
   };
 
   const handleVerifyOtpAndReset = (e: React.FormEvent) => {
     e.preventDefault();
     if (enteredOtp !== generatedOtp) {
-      setAuthError('رمز التأكيد غير صحيح! تأكد من الـ 6 أرقام الواردة على الواتساب');
+      setAuthError('رمز التأكيد غير صحيح');
       return;
     }
-    if (!newPassword || newPassword.length < 4) {
-      setAuthError('كلمة المرور الجديدة يجب أن تكون 4 أحرف أو أرقام على الأقل');
+    if (!newPassword) {
+      setAuthError('أدخل كلمة المرور الجديدة');
       return;
     }
-
     setAuthError('');
     setAuthMsg('');
+    const matchedPitch = pitchesList.find(p => p.ownerPhone === forgotPhone);
     setCurrentUser({
       role: activePortal,
-      name: activePortal === 'player' ? 'كابتن الفريق' : (pitch?.name || 'صاحب الملعب'),
-      phone: forgotPhone
+      name: matchedPitch ? matchedPitch.ownerName : 'كابتن الفريق',
+      phone: forgotPhone,
+      pitchId: matchedPitch?.id
     });
   };
 
+  // دخول الإدارة العامة
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (adminUsername === 'hbosh' && adminPassword === 'Zz@101620') {
-      setCurrentUser({ role: 'admin', name: 'المسؤول الرئيسي' });
+      setCurrentUser({ role: 'admin', name: 'المسؤول العام' });
       setShowAdminModal(false);
       setAdminUsername('');
       setAdminPassword('');
       setAuthError('');
     } else {
-      setAuthError('اسم المستخدم أو كلمة المرور غير صحيحة!');
+      setAuthError('بيانات دخول الإدارة غير صحيحة');
     }
   };
 
-  const openPlayerBookingModal = (slot: Slot) => {
-    setSelectedSlot(slot);
-    setBookingCaptainName(currentUser.name || '');
-    setBookingCaptainPhone(currentUser.phone || '');
-  };
-
+  // تأكيد حجز اللاعب
   const handleConfirmPlayerBooking = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSlot || !bookingCaptainName || bookingCaptainPhone.length !== 11) return;
+    if (!selectedSlot || !bookingCaptainName || bookingCaptainPhone.length !== 11 || !selectedPitchId) return;
 
-    setAllSlots(prev => ({
-      ...prev,
-      [selectedDate.dateStr]: prev[selectedDate.dateStr].map(slot => 
-        slot.id === selectedSlot.id 
-          ? { ...slot, isBooked: true, bookedBy: bookingCaptainName, phone: bookingCaptainPhone }
-          : slot
-      )
-    }));
+    setPitchSlots(prev => {
+      const pitchData = prev[selectedPitchId] || {};
+      const daySlots = pitchData[selectedDate.dateStr] || generateSlots(selectedHours24, schedulePrice, selectedDate.dateStr);
+
+      return {
+        ...prev,
+        [selectedPitchId]: {
+          ...pitchData,
+          [selectedDate.dateStr]: daySlots.map(s => 
+            s.id === selectedSlot.id 
+              ? { ...s, isBooked: true, bookedBy: bookingCaptainName, phone: bookingCaptainPhone }
+              : s
+          )
+        }
+      };
+    });
 
     setSelectedSlot(null);
   };
 
+  // تأكيد الحجز اليدوي لصاحب الملعب
   const handleOwnerManualBookingSubmit = () => {
-    if (!ownerManualSlot || !ownerTeamName || ownerTeamPhone.length !== 11) return;
-    setAllSlots(prev => ({
-      ...prev,
-      [selectedDate.dateStr]: (prev[selectedDate.dateStr] || []).map(slot =>
-        slot.id === ownerManualSlot.id
-          ? { ...slot, isBooked: true, bookedBy: ownerTeamName, phone: ownerTeamPhone }
-          : slot
-      )
-    }));
+    if (!ownerManualSlot || !ownerTeamName || ownerTeamPhone.length !== 11 || !currentOwnerPitch) return;
+
+    setPitchSlots(prev => {
+      const pitchData = prev[currentOwnerPitch.id] || {};
+      const daySlots = pitchData[selectedDate.dateStr] || generateSlots(selectedHours24, schedulePrice, selectedDate.dateStr);
+
+      return {
+        ...prev,
+        [currentOwnerPitch.id]: {
+          ...pitchData,
+          [selectedDate.dateStr]: daySlots.map(s => 
+            s.id === ownerManualSlot.id 
+              ? { ...s, isBooked: true, bookedBy: ownerTeamName, phone: ownerTeamPhone }
+              : s
+          )
+        }
+      };
+    });
+
     setOwnerManualSlot(null);
     setOwnerTeamName('');
     setOwnerTeamPhone('');
   };
 
+  // تفريغ الساعة
   const executeClearSlot = () => {
-    if (!slotToConfirmCancel) return;
-    setAllSlots(prev => ({
-      ...prev,
-      [selectedDate.dateStr]: prev[selectedDate.dateStr].map(slot => 
-        slot.id === slotToConfirmCancel.id
-          ? { ...slot, isBooked: false, bookedBy: undefined, phone: undefined }
-          : slot
-      )
-    }));
+    if (!slotToConfirmCancel || !currentOwnerPitch) return;
+
+    setPitchSlots(prev => {
+      const pitchData = prev[currentOwnerPitch.id] || {};
+      const daySlots = pitchData[selectedDate.dateStr] || [];
+
+      return {
+        ...prev,
+        [currentOwnerPitch.id]: {
+          ...pitchData,
+          [selectedDate.dateStr]: daySlots.map(s => 
+            s.id === slotToConfirmCancel.id 
+              ? { ...s, isBooked: false, bookedBy: undefined, phone: undefined }
+              : s
+          )
+        }
+      };
+    });
+
     setSlotToConfirmCancel(null);
     setViewDetailsSlot(null);
   };
@@ -408,10 +499,12 @@ export default function Home() {
     );
   };
 
+  // حفظ تعديلات الملعب والساعات
   const saveFullSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pitch) return;
-    setPitchesList(prev => prev.map(p => p.id === pitch.id ? {
+    if (!currentOwnerPitch) return;
+
+    setPitchesList(prev => prev.map(p => p.id === currentOwnerPitch.id ? {
       ...p,
       name: editName,
       area: editArea,
@@ -420,37 +513,33 @@ export default function Home() {
       defaultPricePerHour: schedulePrice
     } : p));
 
-    setAllSlots(prev => {
-      const updated = { ...prev };
-      const targetDateStrings = applyToAllDays 
-        ? dateOptions.map(d => d.dateStr) 
-        : [scheduleTargetDateStr || selectedDate.dateStr];
+    setPitchSlots(prev => {
+      const pitchData = prev[currentOwnerPitch.id] || {};
+      const updatedDates = { ...pitchData };
 
-      targetDateStrings.forEach(dStr => {
-        const existingBooked = (prev[dStr] || []).filter(s => s.isBooked);
-        const newSlots = generateSlotsFromHours(selectedHours24, schedulePrice, dStr);
+      dateOptions.forEach(d => {
+        const existingBooked = (pitchData[d.dateStr] || []).filter(s => s.isBooked);
+        const newSlots = generateSlots(selectedHours24, schedulePrice, d.dateStr);
 
-        const mergedSlots = newSlots.map(ns => {
-          const matched = existingBooked.find(eb => eb.hourNumber === ns.hourNumber);
-          if (matched) {
-            return { ...ns, isBooked: true, bookedBy: matched.bookedBy, phone: matched.phone };
-          }
-          return ns;
+        updatedDates[d.dateStr] = newSlots.map(ns => {
+          const match = existingBooked.find(eb => eb.hourNumber === ns.hourNumber);
+          return match ? { ...ns, isBooked: true, bookedBy: match.bookedBy, phone: match.phone } : ns;
         });
-
-        updated[dStr] = mergedSlots;
       });
 
-      return updated;
+      return { ...prev, [currentOwnerPitch.id]: updatedDates };
     });
 
     setProfileSavedToast(true);
-    setTimeout(() => setProfileSavedToast(false), 3500);
+    setTimeout(() => setProfileSavedToast(false), 3000);
   };
+
+  if (!isClient) return null;
 
   return (
     <div dir="rtl" className="min-h-screen bg-slate-950 text-slate-100 font-sans p-3 md:p-8 flex flex-col justify-between">
       <div>
+        {/* الهيدر مع شعار الساعة */}
         <header className="max-w-5xl mx-auto flex justify-between items-center pb-5 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="bg-emerald-600 p-2 rounded-xl shadow-lg shadow-emerald-900/40">
@@ -458,7 +547,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-white">لعبتنا</h1>
-              <p className="text-[10px] text-slate-400">منظومة حجز الملاعب في العراق</p>
+              <p className="text-[10px] text-slate-400">المنظومة الرسمية لحجز الملاعب الرياضية</p>
             </div>
           </div>
 
@@ -486,11 +575,12 @@ export default function Home() {
 
         <main className="max-w-5xl mx-auto mt-6">
 
+          {/* 0. بوابة تسجيل الدخول */}
           {currentUser.role === 'guest' && (
             <div className="py-8 md:py-14 max-w-md mx-auto space-y-6">
               <div className="text-center space-y-2">
-                <h2 className="text-3xl font-black text-white">مرحباً بك في لعبتنا</h2>
-                <p className="text-xs text-slate-400">سجّل دخولك للوصول إلى الملاعب والحجوزات</p>
+                <h2 className="text-3xl font-black text-white">مرحباً بك في منصة لعبتنا</h2>
+                <p className="text-xs text-slate-400">سجل الدخول لحجز ملعبك أو إدارة حجوزاتك</p>
               </div>
 
               <div className="bg-slate-900 p-1.5 rounded-2xl border border-slate-800 grid grid-cols-2 gap-1">
@@ -500,7 +590,6 @@ export default function Home() {
                     setActivePortal('player');
                     setAuthMode('login');
                     setAuthError('');
-                    setAuthMsg('');
                   }}
                   className={`py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                     activePortal === 'player' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
@@ -514,7 +603,6 @@ export default function Home() {
                     setActivePortal('owner');
                     setAuthMode('login');
                     setAuthError('');
-                    setAuthMsg('');
                   }}
                   className={`py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                     activePortal === 'owner' ? 'bg-amber-600 text-slate-950 shadow-md font-black' : 'text-slate-400 hover:text-white'
@@ -528,9 +616,8 @@ export default function Home() {
                 <form onSubmit={handleLogin} className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
                     <h3 className="font-bold text-sm text-white">
-                      تسجيل دخول {activePortal === 'player' ? 'اللاعبين' : 'صاحب الملعب'}
+                      دخول {activePortal === 'player' ? 'اللاعبين' : 'أصحاب الملاعب'}
                     </h3>
-                    <span className="text-[10px] text-emerald-400 font-bold">حساب مسجل</span>
                   </div>
 
                   <div>
@@ -559,11 +646,10 @@ export default function Home() {
                           setForgotStep(1);
                           setForgotPhone(loginPhone);
                           setAuthError('');
-                          setAuthMsg('');
                         }}
                         className="text-[11px] text-amber-400 hover:underline"
                       >
-                        نسيت كلمة السر؟
+                        نسيت الرمز؟
                       </button>
                     </div>
                     <div className="relative">
@@ -588,9 +674,7 @@ export default function Home() {
                   <button
                     type="submit"
                     className={`w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg ${
-                      activePortal === 'player'
-                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950'
-                        : 'bg-amber-600 hover:bg-amber-500 text-slate-950 shadow-amber-950'
+                      activePortal === 'player' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-amber-600 hover:bg-amber-500 text-slate-950'
                     }`}
                   >
                     تسجيل الدخول
@@ -603,11 +687,10 @@ export default function Home() {
                       onClick={() => {
                         setAuthMode('register');
                         setAuthError('');
-                        setAuthMsg('');
                       }}
                       className="text-emerald-400 font-bold hover:underline"
                     >
-                      أنشئ حسابك الآن مجاناً
+                      أنشئ حساباً جديداً
                     </button>
                   </div>
                 </form>
@@ -617,7 +700,7 @@ export default function Home() {
                 <form onSubmit={handleRegister} className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
                     <h3 className="font-bold text-sm text-white">
-                      إنشاء حساب مجاني ({activePortal === 'player' ? 'لاعب' : 'صاحب ملعب'})
+                      إنشاء حساب مستقل ({activePortal === 'player' ? 'لاعب' : 'صاحب ملعب'})
                     </h3>
                     <button
                       type="button"
@@ -637,7 +720,7 @@ export default function Home() {
                       required
                       value={regName}
                       onChange={(e) => setRegName(e.target.value)}
-                      placeholder="مثال: كابتن ليث"
+                      placeholder="مثال: كابتن أحمد"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                     />
                   </div>
@@ -650,7 +733,7 @@ export default function Home() {
                         required
                         value={regPitchName}
                         onChange={(e) => setRegPitchName(e.target.value)}
-                        placeholder="مثال: ملعب النجوم الدولي"
+                        placeholder="مثال: ملعب النسور الدولي"
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
                       />
                     </div>
@@ -670,13 +753,13 @@ export default function Home() {
                   </div>
 
                   <div>
-                    <label className="text-xs text-slate-300 block mb-1">كلمة المرور للحساب</label>
+                    <label className="text-xs text-slate-300 block mb-1">كلمة المرور</label>
                     <input
                       type="password"
                       required
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
-                      placeholder="اختر كلمة مرور"
+                      placeholder="اختر كلمة مرور قوية"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                     />
                   </div>
@@ -690,38 +773,25 @@ export default function Home() {
                   <button
                     type="submit"
                     className={`w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg ${
-                      activePortal === 'player'
-                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950'
-                        : 'bg-amber-600 hover:bg-amber-500 text-slate-950 shadow-amber-950'
+                      activePortal === 'player' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-amber-600 hover:bg-amber-500 text-slate-950'
                     }`}
                   >
-                    تأكيد إنشاء الحساب
+                    تأكيد التسجيل
                   </button>
                 </form>
               )}
 
               {authMode === 'forgot' && (
                 <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
-                    <h3 className="font-bold text-sm text-white flex items-center gap-1.5">
-                      <MessageCircle className="w-4 h-4 text-emerald-400" /> استعادة كلمة السر عبر واتساب
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => setAuthMode('login')}
-                      className="text-[11px] text-slate-400 hover:text-white"
-                    >
-                      إلغاء
-                    </button>
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+                    <h3 className="font-bold text-sm text-white">استعادة كلمة السر</h3>
+                    <button type="button" onClick={() => setAuthMode('login')} className="text-xs text-slate-400">إلغاء</button>
                   </div>
 
                   {forgotStep === 1 ? (
                     <form onSubmit={handleSendWhatsAppOtp} className="space-y-4">
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        أدخل رقم هاتفك المسجل، وسيتم فتح تطبيق <strong>واتساب</strong> وإرسال رمز تأكيد مكوّن من <strong>6 أرقام</strong>.
-                      </p>
                       <div>
-                        <label className="text-xs text-slate-300 block mb-1">رقم الهاتف المسجل</label>
+                        <label className="text-xs text-slate-300 block mb-1">أدخل رقم هاتفك المسجل</label>
                         <input
                           type="tel"
                           required
@@ -729,41 +799,29 @@ export default function Home() {
                           value={forgotPhone}
                           onChange={(e) => setForgotPhone(e.target.value.replace(/[^0-9]/g, ''))}
                           placeholder="07XXXXXXXXX"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono"
                         />
                       </div>
-
                       {authError && <p className="text-xs text-rose-400">{authError}</p>}
-
-                      <button
-                        type="submit"
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs transition-all shadow-lg shadow-emerald-950 flex items-center justify-center gap-2"
-                      >
-                        <MessageCircle className="w-4 h-4" /> إرسال رمز التأكيد (6 أرقام) للواتساب
+                      <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs">
+                        إرسال الرمز عبر واتساب
                       </button>
                     </form>
                   ) : (
                     <form onSubmit={handleVerifyOtpAndReset} className="space-y-4">
-                      {authMsg && (
-                        <div className="p-3 bg-emerald-950 border border-emerald-800 text-emerald-300 text-xs rounded-xl flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                          <span>تم إرسال كود التأكيد (رمز التجربة: <strong>{generatedOtp}</strong>)</span>
-                        </div>
-                      )}
-
+                      {authMsg && <p className="text-xs text-emerald-400">{authMsg}</p>}
                       <div>
-                        <label className="text-xs text-slate-300 block mb-1">أدخل رمز التأكيد (6 أرقام)</label>
+                        <label className="text-xs text-slate-300 block mb-1">رمز التحقق (6 أرقام)</label>
                         <input
                           type="text"
                           required
                           maxLength={6}
                           value={enteredOtp}
-                          onChange={(e) => setEnteredOtp(e.target.value.replace(/[^0-9]/g, ''))}
-                          placeholder="مثلاً: 849201"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl text-center py-2.5 text-lg text-white font-mono tracking-widest focus:outline-none focus:border-emerald-500"
+                          onChange={(e) => setEnteredOtp(e.target.value)}
+                          placeholder="849201"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl text-center py-2.5 text-lg font-mono text-white tracking-widest"
                         />
                       </div>
-
                       <div>
                         <label className="text-xs text-slate-300 block mb-1">كلمة المرور الجديدة</label>
                         <input
@@ -771,18 +829,12 @@ export default function Home() {
                           required
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="أدخل كلمة المرور الجديدة"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white"
                         />
                       </div>
-
                       {authError && <p className="text-xs text-rose-400">{authError}</p>}
-
-                      <button
-                        type="submit"
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs transition-all shadow-lg"
-                      >
-                        تأكيد الرمز والدخول إلى حسابي
+                      <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs">
+                        تثبيت والدخول
                       </button>
                     </form>
                   )}
@@ -792,37 +844,34 @@ export default function Home() {
           )}
 
           {/* 1. واجهة صاحب الملعب */}
-          {currentUser.role === 'owner' && (
+          {currentUser.role === 'owner' && currentOwnerPitch && (
             <div>
-              {!pitch || pitch.subscriptionStatus === 'expired' ? (
+              {currentOwnerPitch.subscriptionStatus === 'expired' ? (
                 <div className="bg-slate-900 border border-rose-900/80 rounded-3xl p-6 md:p-10 max-w-2xl mx-auto my-8 text-center shadow-2xl space-y-6">
                   <div className="w-16 h-16 bg-rose-950/80 border border-rose-800 rounded-2xl flex items-center justify-center mx-auto text-rose-400">
                     <Lock className="w-8 h-8" />
                   </div>
-
                   <div>
-                    <h3 className="text-2xl font-black text-white">تفعيل اشتراك الملعب</h3>
+                    <h3 className="text-2xl font-black text-white">تفعيل اشتراك ملعب ({currentOwnerPitch.name})</h3>
                     <p className="text-xs md:text-sm text-slate-400 mt-2 max-w-md mx-auto leading-relaxed">
-                      تم تعليق أو انتهاء اشتراك الملعب. لتفعيله مجدداً، يرجى التواصل مع الإدارة أو تحويل مبلغ الاشتراك عبر زين كاش.
+                      اشتراك هذا الملعب منتهي. قم بتحويل رسوم الاشتراك عبر محفظة زين كاش لإعادة التفعيل الفوري.
                     </p>
                   </div>
-
                   <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs space-y-2 text-right">
                     <div className="flex justify-between items-center pb-2 border-b border-slate-900">
                       <span className="text-slate-400">قيمة الاشتراك:</span>
                       <span className="text-emerald-400 font-bold text-sm">75,000 د.ع / 30 يوماً</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400">محفظة زين كاش للإدارة:</span>
+                      <span className="text-slate-400">رقم محفظة زين كاش للإدارة:</span>
                       <span className="text-white font-mono font-black text-sm">{zainCashWalletNumber}</span>
                     </div>
                   </div>
-
                   <a
                     href={whatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-950 flex items-center justify-center gap-2 text-sm"
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg shadow-emerald-950"
                   >
                     <MessageCircle className="w-5 h-5" /> إرسال سكرين شوت التحويل عبر واتساب
                   </a>
@@ -836,7 +885,7 @@ export default function Home() {
                         ownerTab === 'bookings' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <CalendarIcon className="w-4 h-4" /> إدارة الحجوزات والأرباح
+                      <CalendarIcon className="w-4 h-4" /> إدارة جدول الحجوزات ({currentOwnerPitch.name})
                     </button>
                     <button
                       onClick={() => setOwnerTab('profile')}
@@ -844,7 +893,7 @@ export default function Home() {
                         ownerTab === 'profile' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <Edit3 className="w-4 h-4" /> البروفايل وساعات الـ 24 ساعة
+                      <Edit3 className="w-4 h-4" /> تعديل بيانات وساعات الملعب
                     </button>
                   </div>
 
@@ -853,23 +902,19 @@ export default function Home() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-400 font-medium">إحصائيات الأرباح</span>
+                            <span className="text-xs text-slate-400">إحصائيات الإيرادات</span>
                             <div className="bg-slate-950 p-1 rounded-lg border border-slate-800 flex gap-1">
                               <button
                                 onClick={() => setRevenueFilter('daily')}
-                                className={`text-[10px] px-2 py-0.5 rounded font-bold transition-all ${
-                                  revenueFilter === 'daily' ? 'bg-emerald-600 text-white' : 'text-slate-400'
-                                }`}
+                                className={`text-[10px] px-2 py-0.5 rounded font-bold ${revenueFilter === 'daily' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
                               >
-                                اليومية
+                                اليوم
                               </button>
                               <button
                                 onClick={() => setRevenueFilter('monthly')}
-                                className={`text-[10px] px-2 py-0.5 rounded font-bold transition-all ${
-                                  revenueFilter === 'monthly' ? 'bg-emerald-600 text-white' : 'text-slate-400'
-                                }`}
+                                className={`text-[10px] px-2 py-0.5 rounded font-bold ${revenueFilter === 'monthly' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
                               >
-                                الشهرية
+                                الشهر
                               </button>
                             </div>
                           </div>
@@ -879,7 +924,7 @@ export default function Home() {
                         </div>
 
                         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-                          <span className="text-xs text-slate-400 font-medium">حجوزات اليوم ({selectedDate.dayName})</span>
+                          <span className="text-xs text-slate-400">حجوزات موعد اليوم ({selectedDate.dayName})</span>
                           <p className="text-2xl font-black text-white mt-3">
                             {currentDayBookedCount} / {currentDaySlots.length}
                           </p>
@@ -887,24 +932,40 @@ export default function Home() {
 
                         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between">
                           <div>
-                            <span className="text-xs text-slate-400 font-medium">الاشتراك</span>
+                            <span className="text-xs text-slate-400">صلاحية الاشتراك</span>
                             <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-bold mr-2">
-                              نشط ({pitch.subscriptionDaysLeft} يوم)
+                              نشط ({currentOwnerPitch.subscriptionDaysLeft} يوم)
                             </span>
                           </div>
                           <a
                             href={whatsappUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="mt-3 bg-slate-800 hover:bg-slate-750 text-emerald-400 text-xs font-bold py-2 rounded-xl transition-all border border-slate-700 flex items-center justify-center gap-1.5"
+                            className="mt-3 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold py-2 rounded-xl transition-all border border-slate-700 flex items-center justify-center gap-1.5"
                           >
-                            <MessageCircle className="w-3.5 h-3.5" /> إرسال وصل تجديد مسبق
+                            <MessageCircle className="w-3.5 h-3.5" /> تمديد الاشتراك مسبقاً
                           </a>
                         </div>
                       </div>
 
+                      {/* شريط الأيام */}
+                      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                        {dateOptions.map(date => (
+                          <button
+                            key={date.index}
+                            onClick={() => setSelectedDateIndex(date.index)}
+                            className={`flex-shrink-0 px-4 py-2.5 rounded-xl border text-center text-xs transition-all ${
+                              selectedDateIndex === date.index ? 'bg-emerald-600 text-white font-bold shadow-lg' : 'bg-slate-950 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            <span className="block font-bold">{date.dayName} {date.dayNum}</span>
+                            <span className="text-[10px] opacity-80 block mt-0.5">{date.monthName}</span>
+                          </button>
+                        ))}
+                      </div>
+
                       <div className="bg-slate-900/40 border border-slate-800 p-5 rounded-2xl">
-                        <h4 className="font-bold text-sm text-white mb-4">جدول ساعات: {selectedDate.dayName} ({selectedDate.dateStr})</h4>
+                        <h4 className="font-bold text-sm text-white mb-4">جدول المواعيد: {selectedDate.dayName} ({selectedDate.dayNum} {selectedDate.monthName})</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
                           {currentDaySlots.map(slot => (
                             <div
@@ -918,7 +979,7 @@ export default function Home() {
                                 <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${
                                   slot.isBooked ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-400'
                                 }`}>
-                                  {slot.isBooked ? 'محجوزة' : 'فارغة'}
+                                  {slot.isBooked ? 'محجوزة' : 'متاحة'}
                                 </span>
                               </div>
 
@@ -939,7 +1000,7 @@ export default function Home() {
                                       onClick={() => setViewDetailsSlot(slot)}
                                       className="px-2.5 py-1 bg-slate-800 text-emerald-400 text-xs font-bold rounded-lg border border-slate-700 flex items-center gap-1"
                                     >
-                                      <Eye className="w-3.5 h-3.5" /> المعلومات
+                                      <Eye className="w-3.5 h-3.5" /> التفاصيل
                                     </button>
                                   </div>
                                 </div>
@@ -952,7 +1013,7 @@ export default function Home() {
                                   }}
                                   className="w-full py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-slate-950 flex items-center justify-center gap-1.5"
                                 >
-                                  <UserPlus className="w-3.5 h-3.5" /> تسجيل حجز هاتفي يدوي
+                                  <UserPlus className="w-3.5 h-3.5" /> تسجيل حجز هاتفي
                                 </button>
                               )}
                             </div>
@@ -966,12 +1027,43 @@ export default function Home() {
                     <form onSubmit={saveFullSettings} className="space-y-6 max-w-3xl">
                       {profileSavedToast && (
                         <div className="p-3 bg-emerald-950 border border-emerald-600 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات وتحديث كل الساعات والأسعار في الموقع!
+                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات في النظام بنجاح!
                         </div>
                       )}
                       <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4">
-                        <h4 className="font-bold text-white text-base">تحديد الساعات من قائمة الـ 24</h4>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-72 overflow-y-auto">
+                        <h4 className="font-bold text-white text-base">بيانات الملعب الأساسية</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-xs text-slate-300 block mb-1">اسم الملعب:</label>
+                            <input
+                              type="text"
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-300 block mb-1">الموقع والمنطقة:</label>
+                            <input
+                              type="text"
+                              value={editArea}
+                              onChange={(e) => setEditArea(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-slate-300 block mb-1">وصف الملعب:</label>
+                          <textarea
+                            value={editBio}
+                            onChange={(e) => setEditBio(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white h-20"
+                          />
+                        </div>
+
+                        <h4 className="font-bold text-white text-base pt-3 border-t border-slate-800">ساعات العمل المتاحة للحجز</h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-60 overflow-y-auto">
                           {MASTER_24_HOURS.map(slot => (
                             <button
                               type="button"
@@ -986,16 +1078,15 @@ export default function Home() {
                             </button>
                           ))}
                         </div>
-                        <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row gap-4">
-                          <div className="flex-1">
-                            <label className="text-xs text-slate-300 block mb-1">سعر الساعة (د.ع):</label>
-                            <input
-                              type="number"
-                              value={schedulePrice}
-                              onChange={(e) => setSchedulePrice(Number(e.target.value))}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-white"
-                            />
-                          </div>
+
+                        <div className="pt-3 border-t border-slate-800">
+                          <label className="text-xs text-slate-300 block mb-1">سعر الساعة (د.ع):</label>
+                          <input
+                            type="number"
+                            value={schedulePrice}
+                            onChange={(e) => setSchedulePrice(Number(e.target.value))}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+                          />
                         </div>
                       </div>
 
@@ -1003,7 +1094,7 @@ export default function Home() {
                         type="submit"
                         className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-3 rounded-xl text-xs transition-all"
                       >
-                        حفظ الساعات والأسعار
+                        حفظ وتحديث النظام
                       </button>
                     </form>
                   )}
@@ -1012,21 +1103,21 @@ export default function Home() {
             </div>
           )}
 
-          {/* 2. واجهة اللاعب (يعرض اليوم مع الشهر بوضوح) */}
+          {/* 2. واجهة اللاعب */}
           {currentUser.role === 'player' && (
             <div>
               {!selectedPitchId ? (
                 <div className="space-y-6">
                   <div className="text-center py-4 max-w-xl mx-auto">
-                    <h2 className="text-2xl font-black text-white">الملاعب المتاحة للحجز</h2>
-                    <p className="text-xs text-slate-400 mt-1">اختر ملعبك المفضل وتصفح أوقات الفراغ فوراً</p>
+                    <h2 className="text-2xl font-black text-white">الملاعب الرياضية المتاحة</h2>
+                    <p className="text-xs text-slate-400 mt-1">اختر ملعبك المفضل وتصفح الأوقات الشاغرة فوراً</p>
                   </div>
 
                   {pitchesList.filter(p => p.subscriptionStatus === 'active').length === 0 ? (
                     <div className="bg-slate-900 border border-slate-800 p-10 rounded-3xl text-center space-y-3 max-w-md mx-auto">
                       <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
                       <h4 className="font-bold text-white text-base">لا توجد ملاعب متاحة حالياً</h4>
-                      <p className="text-xs text-slate-400">جميع اشتراكات الملاعب منتهية أو معطلة مؤقتاً من قبل الإدارة.</p>
+                      <p className="text-xs text-slate-400">جميع اشتراكات الملاعب معطلة أو منتهية حالياً.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1042,9 +1133,11 @@ export default function Home() {
                               <h3 className="font-bold text-white text-base">{p.name}</h3>
                               <span className="text-emerald-400 font-bold text-sm">{p.defaultPricePerHour.toLocaleString()} د.ع</span>
                             </div>
-                            <p className="text-xs text-slate-400">{p.area}</p>
+                            <p className="text-xs text-slate-400 flex items-center gap-1">
+                              <MapPin className="w-3.5 h-3.5" /> {p.area}
+                            </p>
                             <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs text-emerald-400 font-bold">
-                              <span>عرض الساعات والحجز</span>
+                              <span>حجز موعد الآن</span>
                               <ArrowRight className="w-4 h-4" />
                             </div>
                           </div>
@@ -1059,15 +1152,15 @@ export default function Home() {
                     onClick={() => setSelectedPitchId(null)}
                     className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5"
                   >
-                    <ArrowRight className="w-4 h-4" /> العودة لقائمة الملاعب
+                    <ArrowRight className="w-4 h-4" /> العودة لكافة الملاعب
                   </button>
 
-                  {pitch && (
+                  {activePitchForPlayer && (
                     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
-                      <h2 className="text-2xl font-black text-white">{pitch.name}</h2>
-                      <p className="text-xs text-slate-300">{pitch.bio}</p>
+                      <h2 className="text-2xl font-black text-white">{activePitchForPlayer.name}</h2>
+                      <p className="text-xs text-slate-300">{activePitchForPlayer.bio}</p>
 
-                      {/* شريط الأيام والتواريخ مع الشهر بوضوح */}
+                      {/* شريط الأيام مع الشهر بالاسم الكامل */}
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
                         {dateOptions.map(date => (
                           <button
@@ -1088,7 +1181,11 @@ export default function Home() {
                           <button
                             key={slot.id}
                             disabled={slot.isBooked}
-                            onClick={() => openPlayerBookingModal(slot)}
+                            onClick={() => {
+                              setSelectedSlot(slot);
+                              setBookingCaptainName(currentUser.name || '');
+                              setBookingCaptainPhone(currentUser.phone || '');
+                            }}
                             className={`p-4 rounded-2xl border text-right transition-all flex justify-between items-center ${
                               slot.isBooked ? 'bg-rose-950/20 border-rose-900/30 opacity-60' : 'bg-slate-950 border-slate-800 hover:border-emerald-500'
                             }`}
@@ -1112,70 +1209,81 @@ export default function Home() {
             </div>
           )}
 
-          {/* 3. لوحة الإدارة المركزية */}
+          {/* 3. لوحة الإدارة العامة */}
           {currentUser.role === 'admin' && (
             <div className="bg-slate-900 border border-blue-900/60 p-6 rounded-3xl space-y-6">
               <div className="flex items-center gap-2 text-blue-400 border-b border-slate-800 pb-3">
                 <ShieldCheck className="w-6 h-6" />
-                <h3 className="text-lg font-black text-white">لوحة الإدارة المركزية (إدارة الملاعب والتعاقدات)</h3>
+                <h3 className="text-lg font-black text-white">لوحة الإدارة المركزية (تحكم الملاعب والاشتراكات)</h3>
               </div>
 
               {pitchesList.length === 0 ? (
                 <div className="bg-slate-950 p-8 rounded-2xl border border-slate-800 text-center text-slate-400 text-xs">
-                  لا توجد ملاعب مسجلة حالياً في النظام (تم حذف جميع التعاقدات).
+                  لا توجد ملاعب في النظام حالياً.
                 </div>
               ) : (
-                pitchesList.map(p => (
-                  <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
-                      <div>
-                        <h4 className="font-bold text-white text-base">{p.name}</h4>
-                        <p className="text-xs text-slate-400 mt-0.5">العنوان: {p.area}</p>
+                <div className="space-y-4">
+                  {pitchesList.map(p => (
+                    <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
+                        <div>
+                          <h4 className="font-bold text-white text-base">{p.name}</h4>
+                          <p className="text-xs text-slate-400 mt-0.5">العنوان: {p.area}</p>
+                        </div>
+                        <span className={`text-xs px-3 py-1 rounded-full font-bold ${
+                          p.subscriptionStatus === 'active' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                        }`}>
+                          {p.subscriptionStatus === 'active' ? `نشط (${p.subscriptionDaysLeft} يوم متبقي)` : 'معطل / منتهي'}
+                        </span>
                       </div>
-                      <span className={`text-xs px-3 py-1 rounded-full font-bold ${
-                        p.subscriptionStatus === 'active' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
-                      }`}>
-                        {p.subscriptionStatus === 'active' ? `الاشتراك نشط (${p.subscriptionDaysLeft} يوم متبقي)` : 'الاشتراك منتهي / معطل'}
-                      </span>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
-                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-slate-400 block">اسم صاحب الملعب:</span>
-                        <span className="text-white font-bold text-sm block">{p.ownerName}</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                          <span className="text-slate-400 block">صاحب الملعب:</span>
+                          <span className="text-white font-bold text-sm block">{p.ownerName}</span>
+                        </div>
+                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                          <span className="text-slate-400 block">رقم الهاتف:</span>
+                          <span className="text-emerald-400 font-mono font-bold text-sm block">{p.ownerPhone}</span>
+                        </div>
+                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                          <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
+                          <span className="text-amber-400 font-mono font-bold text-sm block">{p.lastRenewDate}</span>
+                        </div>
                       </div>
-                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-slate-400 block">رقم هاتفه:</span>
-                        <span className="text-emerald-400 font-mono font-bold text-sm block">{p.ownerPhone}</span>
-                      </div>
-                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
-                        <span className="text-amber-400 font-mono font-bold text-sm block">{p.lastRenewDate}</span>
-                      </div>
-                    </div>
 
-                    <div className="pt-2 flex flex-wrap gap-3">
-                      <button
-                        onClick={() => setAdminConfirmAction('renew')}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                      >
-                        + تمديد الاشتراك 30 يوماً
-                      </button>
-                      <button
-                        onClick={() => setAdminConfirmAction('expire')}
-                        className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                      >
-                        تعطيل اشتراك الملعب
-                      </button>
-                      <button
-                        onClick={() => setAdminConfirmAction('delete')}
-                        className="bg-slate-800 hover:bg-rose-900 text-rose-400 hover:text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all border border-slate-700"
-                      >
-                        🗑️ حذف الملعب للأبد (إنهاء التعاقد)
-                      </button>
+                      <div className="pt-2 flex flex-wrap gap-3">
+                        <button
+                          onClick={() => {
+                            setTargetActionPitchId(p.id);
+                            setAdminConfirmAction('renew');
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                        >
+                          + تمديد 30 يوماً
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTargetActionPitchId(p.id);
+                            setAdminConfirmAction('expire');
+                          }}
+                          className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                        >
+                          تعطيل الحساب
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTargetActionPitchId(p.id);
+                            setAdminConfirmAction('delete');
+                          }}
+                          className="bg-slate-800 hover:bg-rose-900 text-rose-400 hover:text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all border border-slate-700"
+                        >
+                          🗑️ حذف نهائياً
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -1192,45 +1300,41 @@ export default function Home() {
         </button>
       </footer>
 
-      {/* نافذة تأكيد الإدارة (الضغطرة الثانية) */}
-      {adminConfirmAction && (
+      {/* نافذة تأكيد الإدارة بنظام الضغطتين */}
+      {adminConfirmAction && targetActionPitchId && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-center">
             <div className="w-12 h-12 bg-amber-950 border border-amber-800 text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
               <AlertTriangle className="w-6 h-6" />
             </div>
             <h5 className="font-black text-white text-base">
-              {adminConfirmAction === 'renew' && 'تأكيد تمديد اشتراك الملعب لشهر إضافي؟'}
-              {adminConfirmAction === 'expire' && 'تأكيد تعطيل اشتراك هذا الملعب؟'}
-              {adminConfirmAction === 'delete' && 'تأكيد حذف الملعب وإنهاء التعاقد للأبد؟'}
+              {adminConfirmAction === 'renew' && 'هل أنت متأكد من تمديد هذا الملعب 30 يوماً؟'}
+              {adminConfirmAction === 'expire' && 'هل أنت متأكد من تعطيل هذا الملعب؟'}
+              {adminConfirmAction === 'delete' && 'تحذير: هل أنت متأكد من حذف الملعب نهائياً؟'}
             </h5>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              {adminConfirmAction === 'renew' && 'سيتم إضافة 30 يوماً وتحديث تاريخ التجديد لملعب الأساطير.'}
-              {adminConfirmAction === 'expire' && 'سيتم إخفاء الملعب فوراً من واجهة اللاعبين ومنع الحجوزات.'}
-              {adminConfirmAction === 'delete' && 'تحذير: سيتم إزالة الملعب من المنصة نهائياً ولن يظهر بعد الآن.'}
-            </p>
             <div className="grid grid-cols-2 gap-3 pt-2">
               <button
                 onClick={() => {
-                  const todayStr = new Date().toISOString().split('T')[0];
-                  if (adminConfirmAction === 'renew' && pitch) {
-                    setPitchesList(prev => prev.map(p => ({
+                  const today = new Date().toISOString().split('T')[0];
+                  if (adminConfirmAction === 'renew') {
+                    setPitchesList(prev => prev.map(p => p.id === targetActionPitchId ? {
                       ...p,
                       subscriptionStatus: 'active',
                       subscriptionDaysLeft: p.subscriptionDaysLeft + 30,
-                      lastRenewDate: todayStr
-                    })));
-                  } else if (adminConfirmAction === 'expire' && pitch) {
-                    setPitchesList(prev => prev.map(p => ({
+                      lastRenewDate: today
+                    } : p));
+                  } else if (adminConfirmAction === 'expire') {
+                    setPitchesList(prev => prev.map(p => p.id === targetActionPitchId ? {
                       ...p,
                       subscriptionStatus: 'expired',
                       subscriptionDaysLeft: 0
-                    })));
+                    } : p));
                   } else if (adminConfirmAction === 'delete') {
-                    setPitchesList([]);
+                    setPitchesList(prev => prev.filter(p => p.id !== targetActionPitchId));
                     setSelectedPitchId(null);
                   }
                   setAdminConfirmAction(null);
+                  setTargetActionPitchId(null);
                 }}
                 className={`text-white font-bold py-2.5 rounded-xl text-xs ${
                   adminConfirmAction === 'delete' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500'
@@ -1239,7 +1343,10 @@ export default function Home() {
                 تأكيد التنفيذ
               </button>
               <button
-                onClick={() => setAdminConfirmAction(null)}
+                onClick={() => {
+                  setAdminConfirmAction(null);
+                  setTargetActionPitchId(null);
+                }}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs"
               >
                 تراجع
@@ -1257,7 +1364,7 @@ export default function Home() {
               <KeyRound className="w-5 h-5" />
             </div>
             <div className="flex justify-between items-center">
-              <h4 className="font-bold text-white text-sm">دخول الإدارة العامة</h4>
+              <h4 className="font-bold text-white text-sm">دخول الإدارة المركزية</h4>
               <button onClick={() => setShowAdminModal(false)} className="text-slate-400 text-xs">إلغاء</button>
             </div>
             <form onSubmit={handleAdminLoginSubmit} className="space-y-3 text-right">
@@ -1269,7 +1376,7 @@ export default function Home() {
                   value={adminUsername}
                   onChange={(e) => setAdminUsername(e.target.value)}
                   placeholder="hbosh"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono"
                 />
               </div>
               <div>
@@ -1280,12 +1387,12 @@ export default function Home() {
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono"
                 />
               </div>
               {authError && <p className="text-[11px] text-rose-400 text-center">{authError}</p>}
               <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl text-xs">
-                دخول الإدارة
+                تسجيل الدخول
               </button>
             </form>
           </div>
@@ -1297,7 +1404,7 @@ export default function Home() {
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 space-y-4">
             <div className="flex justify-between items-center">
-              <h4 className="font-bold text-white text-base">تأكيد حجز الساعة</h4>
+              <h4 className="font-bold text-white text-base">تأكيد حجز الموعد</h4>
               <button onClick={() => setSelectedSlot(null)} className="text-slate-400 text-xs">إلغاء</button>
             </div>
 
@@ -1325,10 +1432,7 @@ export default function Home() {
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs text-slate-300">رقم الهاتف:</label>
-                  <span className="text-[10px] text-amber-400 font-medium">يمكنك تعديله إذا كنت تحجز لصديقك</span>
-                </div>
+                <label className="text-xs text-slate-300 block mb-1">رقم الهاتف:</label>
                 <input
                   type="tel"
                   required
@@ -1350,7 +1454,7 @@ export default function Home() {
       {/* نافذة تسجيل حجز يدوي لصاحب الملعب */}
       {ownerManualSlot && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-amber-800/80 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-amber-800/80 w-full max-w-md rounded-2xl p-6 space-y-4">
             <div className="flex justify-between items-center">
               <h4 className="font-bold text-base text-white">تسجيل حجز هاتفي يدوي</h4>
               <button onClick={() => setOwnerManualSlot(null)} className="text-slate-400 text-xs">إلغاء</button>
@@ -1377,24 +1481,21 @@ export default function Home() {
                 onClick={handleOwnerManualBookingSubmit}
                 className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs"
               >
-                تثبيت الحجز اليدوي
+                تثبيت الحجز
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* نافذة التأكيد الإجبارية لتفريغ الساعة */}
+      {/* نافذة التأكيد لتفريغ الساعة */}
       {slotToConfirmCancel && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-rose-800 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-center">
+          <div className="bg-slate-900 border border-rose-800 w-full max-w-md rounded-3xl p-6 space-y-4 text-center">
             <div className="w-12 h-12 bg-rose-950 border border-rose-800 text-rose-400 rounded-2xl flex items-center justify-center mx-auto">
               <AlertTriangle className="w-6 h-6" />
             </div>
             <h5 className="font-black text-white text-base">هل أنت متأكد من تفريغ الساعة؟</h5>
-            <p className="text-xs text-slate-300">
-              سيتم تفريغ موعد <strong>{slotToConfirmCancel.time}</strong> المحجوز باسم ({slotToConfirmCancel.bookedBy}).
-            </p>
             <div className="grid grid-cols-2 gap-3 pt-2">
               <button onClick={executeClearSlot} className="bg-rose-600 text-white font-bold py-2.5 rounded-xl text-xs">
                 تأكيد التفريغ
@@ -1407,12 +1508,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* نافذة إظهار المعلومات الكاملة لصاحب الملعب */}
+      {/* تفاصيل الحجز */}
       {viewDetailsSlot && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h4 className="font-black text-base text-white">تفاصيل حجز الساعة ({viewDetailsSlot.time})</h4>
+              <h4 className="font-black text-base text-white">تفاصيل الحجز ({viewDetailsSlot.time})</h4>
               <button onClick={() => setViewDetailsSlot(null)} className="text-slate-400 text-xs">إغلاق</button>
             </div>
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
@@ -1434,7 +1535,7 @@ export default function Home() {
                 href={`tel:${viewDetailsSlot.phone}`}
                 className="bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1"
               >
-                <PhoneCall className="w-3.5 h-3.5" /> اتصال هاتفي
+                <PhoneCall className="w-3.5 h-3.5" /> اتصال
               </a>
               <a
                 href={`https://wa.me/964${viewDetailsSlot.phone?.replace(/^0/, '')}`}
@@ -1442,7 +1543,7 @@ export default function Home() {
                 rel="noopener noreferrer"
                 className="bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1"
               >
-                <MessageCircle className="w-3.5 h-3.5" /> محادثة واتساب
+                <MessageCircle className="w-3.5 h-3.5" /> واتساب
               </a>
             </div>
           </div>
