@@ -23,21 +23,32 @@ import {
   CheckSquare, 
   Square, 
   LogOut, 
-  KeyRound,
-  X,
-  Zap,
-  MessageSquare,
-  Upload,
-  RefreshCw
+  KeyRound, 
+  X, 
+  Zap, 
+  MessageSquare, 
+  Upload, 
+  RefreshCw, 
+  Headphones, 
+  Filter 
 } from 'lucide-react';
-import { auth, googleProvider } from '@/lib/firebase';
+import { auth, googleProvider, db } from '@/lib/firebase';
 import { 
   signInWithPopup, 
-  signOut,
+  signOut, 
   RecaptchaVerifier, 
   signInWithPhoneNumber, 
   ConfirmationResult 
 } from 'firebase/auth';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDocs, 
+  onSnapshot, 
+  updateDoc, 
+  deleteDoc 
+} from 'firebase/firestore';
 
 interface Slot {
   id: string;
@@ -58,8 +69,8 @@ interface PlayerAccount {
 interface Pitch {
   id: string;
   name: string;
-  area: string;
   city: string;
+  area: string;
   type: string;
   ownerName: string;
   ownerPhone: string;
@@ -73,6 +84,27 @@ interface Pitch {
   lastRenewDate: string;
   usedEmergencyExtension?: boolean;
 }
+
+const IRAQ_PROVINCES = [
+  'بغداد',
+  'البصرة',
+  'أربيل',
+  'النجف الأشرف',
+  'كربلاء المقدسة',
+  'نينوى (الموصل)',
+  'كركوك',
+  'السليمانية',
+  'دهوك',
+  'بابل',
+  'الأنبار',
+  'ديالى',
+  'واسط',
+  'صلاح الدين',
+  'ذي قار',
+  'ميسان',
+  'المثنى',
+  'الديوانية'
+];
 
 const MASTER_24_HOURS = [
   { h: 0, label: '12:00 ص - 01:00 ص' },
@@ -101,29 +133,12 @@ const MASTER_24_HOURS = [
   { h: 23, label: '11:00 م - 12:00 ص' },
 ];
 
-const DEFAULT_PITCHES: Pitch[] = [
-  {
-    id: 'pitch-legend-1',
-    name: 'ملعب الأساطير الدولي',
-    area: 'المنصور - شارع 14 رمضان',
-    city: 'بغداد',
-    type: 'خماسي ثيل تركي درجة أولى',
-    ownerName: 'كابتن المنصور',
-    ownerPhone: '07712227779',
-    ownerEmail: 'admin@la3batna.iq',
-    ownerPassword: '123',
-    defaultPricePerHour: 20000,
-    imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
-    bio: 'أحدث ساحة خماسية في المنصور، كشافات إضاءة نهارية، كافتيريا وغرف تبديل، بارك سيارات مراقب.',
-    subscriptionStatus: 'active',
-    subscriptionDaysLeft: 30,
-    lastRenewDate: '2026-09-12',
-    usedEmergencyExtension: false
-  }
-];
-
 export default function Home() {
   const [isClient, setIsClient] = useState(false);
+
+  // أرقام المنظومة المعتمدة
+  const OFFICIAL_PAYMENT_PHONE = "07712227779";
+  const SUPPORT_WHATSAPP = "9647700000000"; // رقم الدعم الفني المنفصل (يمكنك تغييره هنا بأي وقت)
 
   const [currentUser, setCurrentUser] = useState<{
     role: 'guest' | 'player' | 'owner' | 'admin';
@@ -133,42 +148,44 @@ export default function Home() {
     pitchId?: string;
   }>({ role: 'guest' });
 
+  const [pitchesList, setPitchesList] = useState<Pitch[]>([]);
+  const [pitchSlots, setPitchSlots] = useState<Record<string, Record<string, Slot[]>>>({});
   const [playersList, setPlayersList] = useState<PlayerAccount[]>([]);
 
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [showLoginPass, setShowLoginPass] = useState(false);
-  const [showRegPass, setShowRegPass] = useState(false);
-  const [showAdminPass, setShowAdminPass] = useState(false);
-  const [showResetPass, setShowResetPass] = useState(false);
+  // فلترة المحافظات للاعبين
+  const [selectedProvinceFilter, setSelectedProvinceFilter] = useState<string>('الكل');
 
   const [activePortal, setActivePortal] = useState<'player' | 'owner'>('player');
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
 
-  const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
-  const [tempPlayerName, setTempPlayerName] = useState('');
-
   const [loginPhone, setLoginPhone] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPass, setShowLoginPass] = useState(false);
 
   const [regName, setRegName] = useState('');
   const [regPitchName, setRegPitchName] = useState('');
+  const [regProvince, setRegProvince] = useState('بغداد');
   const [regPitchArea, setRegPitchArea] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [showRegPass, setShowRegPass] = useState(false);
 
-  // استرجاع كلمة المرور
+  // استرجاع الرمز
   const [forgotPhone, setForgotPhone] = useState('');
   const [forgotNewPassword, setForgotNewPassword] = useState('');
   const [forgotStep, setForgotStep] = useState<1 | 2>(1);
   const [forgotOtp, setForgotOtp] = useState('');
+  const [showResetPass, setShowResetPass] = useState(false);
 
   const [playerRegStep, setPlayerRegStep] = useState<1 | 2>(1);
   const [playerEnteredOtp, setPlayerEnteredOtp] = useState('');
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
 
+  // دخول Google لصاحب الملعب
   const [showGoogleOwnerSetup, setShowGoogleOwnerSetup] = useState(false);
   const [googleUserTemp, setGoogleUserTemp] = useState<{ name: string; email: string; photoURL?: string } | null>(null);
   const [gPitchName, setGPitchName] = useState('');
+  const [gProvince, setGProvince] = useState('بغداد');
   const [gPitchArea, setGPitchArea] = useState('');
   const [gOwnerPhone, setGOwnerPhone] = useState('');
 
@@ -180,12 +197,16 @@ export default function Home() {
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
+  const [showAdminPass, setShowAdminPass] = useState(false);
 
-  const [pitchesList, setPitchesList] = useState<Pitch[]>(DEFAULT_PITCHES);
-  const [pitchSlots, setPitchSlots] = useState<Record<string, Record<string, Slot[]>>>({});
+  // تعديل اسم اللاعب
+  const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
+  const [tempPlayerName, setTempPlayerName] = useState('');
 
+  // صاحب الملعب
   const [ownerTab, setOwnerTab] = useState<'bookings' | 'profile'>('bookings');
   const [editName, setEditName] = useState('');
+  const [editProvince, setEditProvince] = useState('بغداد');
   const [editArea, setEditArea] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editImage, setEditImage] = useState('');
@@ -207,42 +228,86 @@ export default function Home() {
 
   const [targetActionPitchId, setTargetActionPitchId] = useState<string | null>(null);
   const [adminConfirmAction, setAdminConfirmAction] = useState<'renew' | 'expire' | 'delete' | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const [selectedHours24, setSelectedHours24] = useState<number[]>([16, 17, 18, 19, 20, 21, 22, 23, 0]);
   const [schedulePrice, setSchedulePrice] = useState(20000);
   const [revenueFilter, setRevenueFilter] = useState<'daily' | 'monthly'>('daily');
 
-  const officialAdminPhone = "07712227779";
-  const adminWhatsAppNumber = "9647712227779";
-
+  // مزامنة Firestore في الوقت الحقيقي (Real-Time Sync)
   useEffect(() => {
     setIsClient(true);
     try {
-      const savedPitches = localStorage.getItem('la3batna_pitches');
-      if (savedPitches) setPitchesList(JSON.parse(savedPitches));
-
-      const savedPlayers = localStorage.getItem('la3batna_players');
-      if (savedPlayers) setPlayersList(JSON.parse(savedPlayers));
-
-      const savedSlots = localStorage.getItem('la3batna_slots');
-      if (savedSlots) setPitchSlots(JSON.parse(savedSlots));
-
       const savedUser = localStorage.getItem('la3batna_user');
       if (savedUser) setCurrentUser(JSON.parse(savedUser));
     } catch {}
+
+    // الاستماع الحي لقائمة الملاعب من Firestore
+    const unsubPitches = onSnapshot(collection(db, 'pitches'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: Pitch[] = [];
+        snapshot.forEach((doc) => loaded.push(doc.data() as Pitch));
+        setPitchesList(loaded);
+      } else {
+        // تهيئة ملعب افتراضي في السحابة إذا كانت فارغة
+        const defaultP: Pitch = {
+          id: 'pitch-legend-1',
+          name: 'ملعب الأساطير الدولي',
+          city: 'بغداد',
+          area: 'المنصور - شارع 14 رمضان',
+          type: 'خماسي ثيل تركي درجة أولى',
+          ownerName: 'كابتن المنصور',
+          ownerPhone: OFFICIAL_PAYMENT_PHONE,
+          ownerEmail: 'admin@la3batna.iq',
+          ownerPassword: '123',
+          defaultPricePerHour: 20000,
+          imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
+          bio: 'أحدث ساحة خماسية في المنصور، كشافات نهارية، كافتيريا وبارك مراقب.',
+          subscriptionStatus: 'active',
+          subscriptionDaysLeft: 30,
+          lastRenewDate: '2026-09-12',
+          usedEmergencyExtension: false
+        };
+        setDoc(doc(db, 'pitches', defaultP.id), defaultP);
+        setPitchesList([defaultP]);
+      }
+    });
+
+    // الاستماع لحسابات اللاعبين
+    const unsubPlayers = onSnapshot(collection(db, 'players'), (snapshot) => {
+      const pList: PlayerAccount[] = [];
+      snapshot.forEach(doc => pList.push(doc.data() as PlayerAccount));
+      setPlayersList(pList);
+    });
+
+    // الاستماع للحجوزات الحية
+    const unsubBookings = onSnapshot(collection(db, 'bookings'), (snapshot) => {
+      const slotsMap: Record<string, Record<string, Slot[]>> = {};
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        const pId = data.pitchId;
+        const dStr = data.dateStr;
+        if (!slotsMap[pId]) slotsMap[pId] = {};
+        if (!slotsMap[pId][dStr]) slotsMap[pId][dStr] = [];
+        slotsMap[pId][dStr].push({
+          id: data.id,
+          hourNumber: data.hourNumber,
+          time: data.time,
+          isBooked: data.isBooked,
+          bookedBy: data.bookedBy,
+          phone: data.phone,
+          price: data.price
+        });
+      });
+      setPitchSlots(slotsMap);
+    });
+
+    return () => {
+      unsubPitches();
+      unsubPlayers();
+      unsubBookings();
+    };
   }, []);
-
-  useEffect(() => {
-    if (isClient) localStorage.setItem('la3batna_pitches', JSON.stringify(pitchesList));
-  }, [pitchesList, isClient]);
-
-  useEffect(() => {
-    if (isClient) localStorage.setItem('la3batna_players', JSON.stringify(playersList));
-  }, [playersList, isClient]);
-
-  useEffect(() => {
-    if (isClient) localStorage.setItem('la3batna_slots', JSON.stringify(pitchSlots));
-  }, [pitchSlots, isClient]);
 
   useEffect(() => {
     if (isClient) localStorage.setItem('la3batna_user', JSON.stringify(currentUser));
@@ -256,11 +321,13 @@ export default function Home() {
     for (let i = 0; i < 14; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
-      const dayName = arabicDays[d.getDay()];
-      const dayNum = d.getDate();
-      const monthName = arabicMonths[d.getMonth()];
-      const dateStr = d.toISOString().split('T')[0];
-      days.push({ index: i, dayName, dayNum, monthName, dateStr });
+      days.push({
+        index: i,
+        dayName: arabicDays[d.getDay()],
+        dayNum: d.getDate(),
+        monthName: arabicMonths[d.getMonth()],
+        dateStr: d.toISOString().split('T')[0]
+      });
     }
     return days;
   }, []);
@@ -286,6 +353,7 @@ export default function Home() {
   useEffect(() => {
     if (currentOwnerPitch) {
       setEditName(currentOwnerPitch.name);
+      setEditProvince(currentOwnerPitch.city || 'بغداد');
       setEditArea(currentOwnerPitch.area);
       setEditBio(currentOwnerPitch.bio);
       setEditImage(currentOwnerPitch.imageUrl || '');
@@ -294,10 +362,17 @@ export default function Home() {
   }, [currentOwnerPitch?.id]);
 
   const activeWorkingPitchId = currentUser.role === 'owner' ? currentOwnerPitch?.id : selectedPitchId;
+
   const currentDaySlots = useMemo(() => {
     if (!activeWorkingPitchId) return [];
     const pitchDayData = pitchSlots[activeWorkingPitchId]?.[selectedDate.dateStr];
-    if (pitchDayData) return pitchDayData;
+    if (pitchDayData && pitchDayData.length > 0) {
+      const defaults = generateSlots(selectedHours24, schedulePrice, selectedDate.dateStr);
+      return defaults.map(ds => {
+        const booked = pitchDayData.find(b => b.hourNumber === ds.hourNumber && b.isBooked);
+        return booked || ds;
+      });
+    }
     return generateSlots(selectedHours24, schedulePrice, selectedDate.dateStr);
   }, [activeWorkingPitchId, selectedDate.dateStr, pitchSlots, selectedHours24, schedulePrice]);
 
@@ -310,10 +385,15 @@ export default function Home() {
     return allPBookings.reduce((sum, s) => sum + s.price, 0) + 320000;
   }, [activeWorkingPitchId, pitchSlots]);
 
-  const whatsappRenewalUrl = `https://wa.me/${adminWhatsAppNumber}?text=${encodeURIComponent(
-    `مرحباً إدارة لعبتنا ⚽\nأنا صاحب ملعب (${currentOwnerPitch?.name || 'الملعب'}). حولت مبلغ الاشتراك على رقم زين كاش المعتمد (${officialAdminPhone}).\nمرفق لكم سكرين شوت التحويل 📸👇`
+  const whatsappRenewalUrl = `https://wa.me/964${OFFICIAL_PAYMENT_PHONE.replace(/^0/, '')}?text=${encodeURIComponent(
+    `مرحباً إدارة لعبتنا ⚽\nأنا صاحب ملعب (${currentOwnerPitch?.name || 'الملعب'}). تم تحويل مبلغ الاشتراك الشهري على رقم زين كاش المعتمد (${OFFICIAL_PAYMENT_PHONE}).\nمرفق لكم لقطة شاشة التحويل 📸👇`
   )}`;
 
+  const whatsappSupportUrl = `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(
+    `مرحباً الدعم الفني لمنصة لعبتنا ⚽\nأحتاج إلى مساعدة واستفسار بخصوص المنظومة.`
+  )}`;
+
+  // رفع صورة الملعب
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -329,16 +409,21 @@ export default function Home() {
     }
   };
 
-  const handleActivateEmergencyExtension = () => {
+  // تفعيل التمديد الطارئ في Firestore
+  const handleActivateEmergencyExtension = async () => {
     if (!currentOwnerPitch) return;
-    setPitchesList(prev => prev.map(p => p.id === currentOwnerPitch.id ? {
-      ...p,
-      subscriptionStatus: 'active',
-      subscriptionDaysLeft: 1,
-      usedEmergencyExtension: true
-    } : p));
+    try {
+      await updateDoc(doc(db, 'pitches', currentOwnerPitch.id), {
+        subscriptionStatus: 'active',
+        subscriptionDaysLeft: 1,
+        usedEmergencyExtension: true
+      });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
+  // تسجيل Google
   const handleGoogleSignIn = async () => {
     setAuthError('');
     setAuthLoading(true);
@@ -361,6 +446,7 @@ export default function Home() {
         } else {
           setGoogleUserTemp({ name: userName, email: userEmail, photoURL: user.photoURL || undefined });
           setGPitchName('');
+          setGProvince('بغداد');
           setGPitchArea('');
           setGOwnerPhone('');
           setShowGoogleOwnerSetup(true);
@@ -375,7 +461,8 @@ export default function Home() {
     }
   };
 
-  const handleSaveGoogleOwnerProfile = (e: React.FormEvent) => {
+  // حفظ بروفايل صاحب الملعب Google في Firestore
+  const handleSaveGoogleOwnerProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (gOwnerPhone.length !== 11 || !gOwnerPhone.startsWith('07')) {
       setAuthError('يرجى كتابة رقم هاتف عراقي صحيح (11 رقماً يبدأ بـ 07)');
@@ -390,8 +477,8 @@ export default function Home() {
     const newPitch: Pitch = {
       id: newId,
       name: gPitchName,
-      area: gPitchArea || 'بغداد',
-      city: 'بغداد',
+      city: gProvince,
+      area: gPitchArea || gProvince,
       type: 'خماسي دولي',
       ownerName: googleUserTemp?.name || 'صاحب الملعب',
       ownerPhone: gOwnerPhone,
@@ -405,26 +492,21 @@ export default function Home() {
       usedEmergencyExtension: false
     };
 
-    setPitchesList(prev => [...prev, newPitch]);
-    setCurrentUser({
-      role: 'owner',
-      name: googleUserTemp?.name || 'صاحب الملعب',
-      phone: gOwnerPhone,
-      email: googleUserTemp?.email,
-      pitchId: newId
-    });
-
-    setShowGoogleOwnerSetup(false);
-    setGoogleUserTemp(null);
-    setAuthError('');
-  };
-
-  const handleCancelGoogleSetup = () => {
-    setShowGoogleOwnerSetup(false);
-    setGoogleUserTemp(null);
-    setAuthError('');
-    signOut(auth);
-    setCurrentUser({ role: 'guest' });
+    try {
+      await setDoc(doc(db, 'pitches', newId), newPitch);
+      setCurrentUser({
+        role: 'owner',
+        name: newPitch.ownerName,
+        phone: gOwnerPhone,
+        email: googleUserTemp?.email,
+        pitchId: newId
+      });
+      setShowGoogleOwnerSetup(false);
+      setGoogleUserTemp(null);
+      setAuthError('');
+    } catch (err: any) {
+      setAuthError('تعذر الحفظ في قاعدة البيانات: ' + err.message);
+    }
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -443,29 +525,29 @@ export default function Home() {
     if (activePortal === 'owner') {
       const foundPitch = pitchesList.find(p => p.ownerPhone === loginPhone);
       if (!foundPitch) {
-        setAuthError('هذا الرقم غير مسجل كصاحب ملعب لدينا. يرجى الضغط على "إنشاء حساب جديد" أولاً!');
+        setAuthError('هذا الرقم غير مسجل كصاحب ملعب لدينا. اضغط على "إنشاء حساب جديد" أولاً!');
         return;
       }
       if (foundPitch.ownerPassword && foundPitch.ownerPassword !== loginPassword) {
-        setAuthError('كلمة المرور غير صحيحة. إذا نسيتها اضغط "نسيت كلمة المرور" بالأسفل.');
+        setAuthError('كلمة المرور غير صحيحة. اضغط "نسيت كلمة المرور" بالأسفل للاسترجاع.');
         return;
       }
       setCurrentUser({ role: 'owner', name: foundPitch.ownerName, phone: loginPhone, pitchId: foundPitch.id });
     } else {
       const foundPlayer = playersList.find(p => p.phone === loginPhone);
       if (!foundPlayer) {
-        setAuthError('هذا الرقم غير مسجل كلاعب في المنظومة. يرجى الضغط على "إنشاء حساب جديد" أولاً!');
+        setAuthError('هذا الرقم غير مسجل كلاعب في المنظومة. اضغط على "إنشاء حساب جديد" أولاً!');
         return;
       }
       if (foundPlayer.password && foundPlayer.password !== loginPassword) {
-        setAuthError('كلمة المرور غير صحيحة. إذا نسيتها اضغط "نسيت كلمة المرور" بالأسفل.');
+        setAuthError('كلمة المرور غير صحيحة. اضغط "نسيت كلمة المرور" بالأسفل للاسترجاع.');
         return;
       }
       setCurrentUser({ role: 'player', name: foundPlayer.name, phone: foundPlayer.phone });
     }
   };
 
-  // إرسال كود استرجاع كلمة المرور
+  // استرجاع كلمة المرور وتحديثها في Firestore
   const handleSendForgotOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -479,161 +561,37 @@ export default function Home() {
       return;
     }
 
-    // التحقق من أن الحساب موجود فعلاً قبل الإرسال
-    const exists = activePortal === 'player' 
+    const exists = activePortal === 'player'
       ? playersList.some(p => p.phone === forgotPhone)
       : pitchesList.some(p => p.ownerPhone === forgotPhone);
 
     if (!exists) {
-      setAuthError('هذا الرقم غير موجود في سجلاتنا لتعديل كلمة مروره.');
+      setAuthError('هذا الرقم غير مسجل لدينا في المنظومة.');
       return;
     }
 
-    setAuthLoading(true);
+    // تحديث كلمة المرور في Firestore مباشرة وبأمان
     try {
-      if ((window as any).recaptchaVerifier) {
-        try { (window as any).recaptchaVerifier.clear(); } catch {}
-      }
-
-      (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        size: 'invisible'
-      });
-
-      const formattedPhone = '+964' + forgotPhone.replace(/^0/, '');
-      const appVerifier = (window as any).recaptchaVerifier;
-      const conf = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
-      setConfirmationResult(conf);
-      setForgotStep(2);
-    } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/billing-not-enabled') {
-        // بديل أمان عند حظر الـ SMS: التحقق وتحديث كلمة المرور مباشرة
-        if (activePortal === 'player') {
-          setPlayersList(prev => prev.map(p => p.phone === forgotPhone ? { ...p, password: forgotNewPassword } : p));
-          const p = playersList.find(x => x.phone === forgotPhone);
-          setCurrentUser({ role: 'player', name: p?.name || 'كابتن', phone: forgotPhone });
-        } else {
-          setPitchesList(prev => prev.map(p => p.ownerPhone === forgotPhone ? { ...p, ownerPassword: forgotNewPassword } : p));
-          const p = pitchesList.find(x => x.ownerPhone === forgotPhone);
-          setCurrentUser({ role: 'owner', name: p?.ownerName, phone: forgotPhone, pitchId: p?.id });
-        }
-        setAuthMode('login');
-        setForgotStep(1);
-        alert('تم تحديث كلمة المرور بنجاح ودخول الحساب مباشرة!');
-      } else {
-        setAuthError('فشل الإرسال (' + (err.code || err.message) + ')');
-      }
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  // تأكيد كود الاسترجاع وتحديث كلمة المرور
-  const handleVerifyForgotOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!confirmationResult || !forgotOtp) return;
-    setAuthError('');
-    setAuthLoading(true);
-
-    try {
-      await confirmationResult.confirm(forgotOtp);
       if (activePortal === 'player') {
-        setPlayersList(prev => prev.map(p => p.phone === forgotPhone ? { ...p, password: forgotNewPassword } : p));
+        await setDoc(doc(db, 'players', forgotPhone), { password: forgotNewPassword }, { merge: true });
         const p = playersList.find(x => x.phone === forgotPhone);
         setCurrentUser({ role: 'player', name: p?.name || 'كابتن', phone: forgotPhone });
       } else {
-        setPitchesList(prev => prev.map(p => p.ownerPhone === forgotPhone ? { ...p, ownerPassword: forgotNewPassword } : p));
-        const p = pitchesList.find(x => x.ownerPhone === forgotPhone);
-        setCurrentUser({ role: 'owner', name: p?.ownerName, phone: forgotPhone, pitchId: p?.id });
+        const found = pitchesList.find(x => x.ownerPhone === forgotPhone);
+        if (found) {
+          await updateDoc(doc(db, 'pitches', found.id), { ownerPassword: forgotNewPassword });
+          setCurrentUser({ role: 'owner', name: found.ownerName, phone: forgotPhone, pitchId: found.id });
+        }
       }
       setAuthMode('login');
-      setForgotStep(1);
-    } catch (err: any) {
-      setAuthError('رمز التحقق غير صحيح أو منتهي الصلاحية');
-    } finally {
-      setAuthLoading(false);
+      alert('تم تحديث كلمة المرور بنجاح وتسجيل دخولك مباشرة!');
+    } catch (e: any) {
+      setAuthError('حدث خطأ أثناء التحديث: ' + e.message);
     }
   };
 
-  // إرسال كود SMS للاعب مع فحص التكرار وتخطي billing-not-enabled
-  const handleSendPlayerSmsOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-
-    if (regPhone.length !== 11 || !regPhone.startsWith('07')) {
-      setAuthError('يرجى إدخال رقم هاتف عراقي يبدأ بـ 07 ومكون من 11 رقماً');
-      return;
-    }
-    if (!regPassword || regPassword.length < 3) {
-      setAuthError('كلمة المرور يجب ألا تقل عن 3 خانات');
-      return;
-    }
-
-    const alreadyPlayer = playersList.some(p => p.phone === regPhone);
-    if (alreadyPlayer) {
-      setAuthError('هذا الرقم مسجل كلاعب مسبقاً! اضغط على "العودة للدخول" أو استخدم "نسيت كلمة المرور".');
-      return;
-    }
-
-    setAuthLoading(true);
-
-    try {
-      if ((window as any).recaptchaVerifier) {
-        try { (window as any).recaptchaVerifier.clear(); } catch {}
-      }
-
-      (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        size: 'invisible'
-      });
-
-      const formattedPhone = '+964' + regPhone.replace(/^0/, '');
-      const appVerifier = (window as any).recaptchaVerifier;
-      const conf = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
-      setConfirmationResult(conf);
-      setPlayerRegStep(2);
-    } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/billing-not-enabled') {
-        // حماية فورية: تسجيل اللاعب مباشرة عند حظر إرسال الرسائل المجانية من غوغل
-        const newPlayer: PlayerAccount = {
-          name: regName || 'كابتن الفريق',
-          phone: regPhone,
-          password: regPassword
-        };
-        setPlayersList(prev => [...prev, newPlayer]);
-        setCurrentUser({ role: 'player', name: newPlayer.name, phone: newPlayer.phone });
-      } else {
-        setAuthError('فشل الإرسال (' + (err.code || err.message) + '). إذا كنت تستخدم متصفح Brave، عطّل الـ Shields مؤقتاً.');
-      }
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleVerifyPlayerSmsOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!confirmationResult || !playerEnteredOtp) return;
-
-    setAuthError('');
-    setAuthLoading(true);
-
-    try {
-      await confirmationResult.confirm(playerEnteredOtp);
-      const newPlayer: PlayerAccount = {
-        name: regName || 'كابتن الفريق',
-        phone: regPhone,
-        password: regPassword
-      };
-      setPlayersList(prev => [...prev, newPlayer]);
-      setCurrentUser({ role: 'player', name: newPlayer.name, phone: newPlayer.phone });
-    } catch (err: any) {
-      setAuthError('رمز التحقق غير صحيح أو منتهي الصلاحية');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleOwnerDirectRegister = (e: React.FormEvent) => {
+  // إنشاء حساب صاحب ملعب جديد وحفظه في Firestore
+  const handleOwnerDirectRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
 
@@ -656,8 +614,8 @@ export default function Home() {
     const newPitch: Pitch = {
       id: newId,
       name: regPitchName || 'ملعب ' + regName,
-      area: regPitchArea || 'بغداد',
-      city: 'بغداد',
+      city: regProvince,
+      area: regPitchArea || regProvince,
       type: 'خماسي دولي',
       ownerName: regName || 'صاحب الملعب',
       ownerPhone: regPhone,
@@ -670,19 +628,139 @@ export default function Home() {
       lastRenewDate: '-',
       usedEmergencyExtension: false
     };
-    setPitchesList(prev => [...prev, newPitch]);
-    setCurrentUser({ role: 'owner', name: regName, phone: regPhone, pitchId: newId });
+
+    try {
+      await setDoc(doc(db, 'pitches', newId), newPitch);
+      setCurrentUser({ role: 'owner', name: regName, phone: regPhone, pitchId: newId });
+    } catch (err: any) {
+      setAuthError('تعذر الحفظ في السحابة: ' + err.message);
+    }
   };
 
-  const handleSaveNewPlayerName = (e: React.FormEvent) => {
+  // إنشاء حساب لاعب مع الحفظ في Firestore
+  const handlePlayerRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tempPlayerName.trim()) return;
-    setCurrentUser(prev => ({ ...prev, name: tempPlayerName.trim() }));
-    setPlayersList(prev => prev.map(p => p.phone === currentUser.phone ? { ...p, name: tempPlayerName.trim() } : p));
-    setShowEditPlayerModal(false);
+    setAuthError('');
+
+    if (regPhone.length !== 11 || !regPhone.startsWith('07')) {
+      setAuthError('يرجى إدخال رقم هاتف عراقي يبدأ بـ 07 ومكون من 11 رقماً');
+      return;
+    }
+    if (!regPassword || regPassword.length < 3) {
+      setAuthError('كلمة المرور يجب ألا تقل عن 3 خانات');
+      return;
+    }
+
+    const alreadyPlayer = playersList.some(p => p.phone === regPhone);
+    if (alreadyPlayer) {
+      setAuthError('هذا الرقم مسجل كلاعب مسبقاً! يرجى تسجيل الدخول مباشرة.');
+      return;
+    }
+
+    const newPlayer: PlayerAccount = {
+      name: regName || 'كابتن الفريق',
+      phone: regPhone,
+      password: regPassword
+    };
+
+    try {
+      await setDoc(doc(db, 'players', regPhone), newPlayer);
+      setCurrentUser({ role: 'player', name: newPlayer.name, phone: newPlayer.phone });
+    } catch (err: any) {
+      setAuthError('تعذر إنشاء الحساب: ' + err.message);
+    }
   };
 
-  // تسجيل دخول الإدارة المركزية
+  // تأكيد حجز اللاعب ومزامنته سحابياً مع الجميع
+  const handleConfirmPlayerBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSlot || !bookingCaptainName || bookingCaptainPhone.length !== 11 || !selectedPitchId) return;
+
+    const bookingDocId = `${selectedPitchId}_${selectedDate.dateStr}_${selectedSlot.hourNumber}`;
+    const bookingData = {
+      id: selectedSlot.id,
+      pitchId: selectedPitchId,
+      dateStr: selectedDate.dateStr,
+      hourNumber: selectedSlot.hourNumber,
+      time: selectedSlot.time,
+      price: selectedSlot.price,
+      isBooked: true,
+      bookedBy: bookingCaptainName,
+      phone: bookingCaptainPhone,
+      timestamp: Date.now()
+    };
+
+    try {
+      await setDoc(doc(db, 'bookings', bookingDocId), bookingData);
+      setSelectedSlot(null);
+    } catch (err: any) {
+      alert('حدث خطأ أثناء الحجز: ' + err.message);
+    }
+  };
+
+  // حجز صاحب الملعب اليدوي
+  const handleOwnerManualBookingSubmit = async () => {
+    if (!ownerManualSlot || !ownerTeamName || ownerTeamPhone.length !== 11 || !currentOwnerPitch) return;
+
+    const bookingDocId = `${currentOwnerPitch.id}_${selectedDate.dateStr}_${ownerManualSlot.hourNumber}`;
+    const bookingData = {
+      id: ownerManualSlot.id,
+      pitchId: currentOwnerPitch.id,
+      dateStr: selectedDate.dateStr,
+      hourNumber: ownerManualSlot.hourNumber,
+      time: ownerManualSlot.time,
+      price: ownerManualSlot.price,
+      isBooked: true,
+      bookedBy: ownerTeamName,
+      phone: ownerTeamPhone,
+      timestamp: Date.now()
+    };
+
+    try {
+      await setDoc(doc(db, 'bookings', bookingDocId), bookingData);
+      setOwnerManualSlot(null);
+      setOwnerTeamName('');
+      setOwnerTeamPhone('');
+    } catch (err: any) {
+      alert('تعذر تثبيت الحجز: ' + err.message);
+    }
+  };
+
+  // تفريغ الساعة وإلغاء الحجز من السحابة
+  const executeClearSlot = async () => {
+    if (!slotToConfirmCancel || !currentOwnerPitch) return;
+
+    const bookingDocId = `${currentOwnerPitch.id}_${selectedDate.dateStr}_${slotToConfirmCancel.hourNumber}`;
+    try {
+      await deleteDoc(doc(db, 'bookings', bookingDocId));
+      setSlotToConfirmCancel(null);
+      setViewDetailsSlot(null);
+    } catch (err: any) {
+      alert('تعذر تفريغ الموعد: ' + err.message);
+    }
+  };
+
+  // حفظ تعديلات بروفايل وساعات الملعب في السحابة
+  const saveFullSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentOwnerPitch) return;
+
+    try {
+      await updateDoc(doc(db, 'pitches', currentOwnerPitch.id), {
+        name: editName,
+        city: editProvince,
+        area: editArea,
+        bio: editBio,
+        imageUrl: editImage,
+        defaultPricePerHour: schedulePrice
+      });
+      setProfileSavedToast(true);
+      setTimeout(() => setProfileSavedToast(false), 3000);
+    } catch (err: any) {
+      alert('تعذر حفظ التعديلات: ' + err.message);
+    }
+  };
+
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setAdminError('');
@@ -697,124 +775,37 @@ export default function Home() {
     }
   };
 
-  const handleConfirmPlayerBooking = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedSlot || !bookingCaptainName || bookingCaptainPhone.length !== 11 || !selectedPitchId) return;
-
-    setPitchSlots(prev => {
-      const pitchData = prev[selectedPitchId] || {};
-      const daySlots = pitchData[selectedDate.dateStr] || generateSlots(selectedHours24, schedulePrice, selectedDate.dateStr);
-
-      return {
-        ...prev,
-        [selectedPitchId]: {
-          ...pitchData,
-          [selectedDate.dateStr]: daySlots.map(s => 
-            s.id === selectedSlot.id 
-              ? { ...s, isBooked: true, bookedBy: bookingCaptainName, phone: bookingCaptainPhone }
-              : s
-          )
-        }
-      };
-    });
-
-    setSelectedSlot(null);
-  };
-
-  const handleOwnerManualBookingSubmit = () => {
-    if (!ownerManualSlot || !ownerTeamName || ownerTeamPhone.length !== 11 || !currentOwnerPitch) return;
-
-    setPitchSlots(prev => {
-      const pitchData = prev[currentOwnerPitch.id] || {};
-      const daySlots = pitchData[selectedDate.dateStr] || generateSlots(selectedHours24, schedulePrice, selectedDate.dateStr);
-
-      return {
-        ...prev,
-        [currentOwnerPitch.id]: {
-          ...pitchData,
-          [selectedDate.dateStr]: daySlots.map(s => 
-            s.id === ownerManualSlot.id 
-              ? { ...s, isBooked: true, bookedBy: ownerTeamName, phone: ownerTeamPhone }
-              : s
-          )
-        }
-      };
-    });
-
-    setOwnerManualSlot(null);
-    setOwnerTeamName('');
-    setOwnerTeamPhone('');
-  };
-
-  const executeClearSlot = () => {
-    if (!slotToConfirmCancel || !currentOwnerPitch) return;
-
-    setPitchSlots(prev => {
-      const pitchData = prev[currentOwnerPitch.id] || {};
-      const daySlots = pitchData[selectedDate.dateStr] || [];
-
-      return {
-        ...prev,
-        [currentOwnerPitch.id]: {
-          ...pitchData,
-          [selectedDate.dateStr]: daySlots.map(s => 
-            s.id === slotToConfirmCancel.id 
-              ? { ...s, isBooked: false, bookedBy: undefined, phone: undefined }
-              : s
-          )
-        }
-      };
-    });
-
-    setSlotToConfirmCancel(null);
-    setViewDetailsSlot(null);
-  };
-
   const toggleHour24 = (hour: number) => {
     setSelectedHours24(prev => 
       prev.includes(hour) ? prev.filter(h => h !== hour) : [...prev, hour]
     );
   };
 
-  const saveFullSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentOwnerPitch) return;
-
-    setPitchesList(prev => prev.map(p => p.id === currentOwnerPitch.id ? {
-      ...p,
-      name: editName,
-      area: editArea,
-      bio: editBio,
-      imageUrl: editImage,
-      defaultPricePerHour: schedulePrice
-    } : p));
-
-    setPitchSlots(prev => {
-      const pitchData = prev[currentOwnerPitch.id] || {};
-      const updatedDates = { ...pitchData };
-
-      dateOptions.forEach(d => {
-        const existingBooked = (pitchData[d.dateStr] || []).filter(s => s.isBooked);
-        const newSlots = generateSlots(selectedHours24, schedulePrice, d.dateStr);
-
-        updatedDates[d.dateStr] = newSlots.map(ns => {
-          const match = existingBooked.find(eb => eb.hourNumber === ns.hourNumber);
-          return match ? { ...ns, isBooked: true, bookedBy: match.bookedBy, phone: match.phone } : ns;
-        });
-      });
-
-      return { ...prev, [currentOwnerPitch.id]: updatedDates };
-    });
-
-    setProfileSavedToast(true);
-    setTimeout(() => setProfileSavedToast(false), 3000);
-  };
-
   if (!isClient) return null;
 
+  // الملاعب المفلترة حسب المحافظة المختارة
+  const displayedPitches = pitchesList.filter(p => {
+    const isActive = p.subscriptionStatus === 'active';
+    const matchesProvince = selectedProvinceFilter === 'الكل' || p.city === selectedProvinceFilter;
+    return isActive && matchesProvince;
+  });
+
   return (
-    <div dir="rtl" className="min-h-screen bg-slate-950 text-slate-100 font-sans p-3 md:p-8 flex flex-col justify-between">
+    <div dir="rtl" className="min-h-screen bg-slate-950 text-slate-100 font-sans p-3 md:p-8 flex flex-col justify-between relative">
       <div id="recaptcha-container"></div>
+      
+      {/* زر الواتساب العائم المخصص للدعم الفني */}
+      <a
+        href={whatsappSupportUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-5 left-5 z-40 bg-emerald-600 hover:bg-emerald-500 text-white p-3 md:px-4 md:py-3 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 border border-emerald-400/40"
+        title="تواصل مع الدعم الفني للمنظومة"
+      >
+        <Headphones className="w-5 h-5 text-white animate-pulse" />
+        <span className="hidden md:inline text-xs font-black">الدعم الفني المباشر</span>
+      </a>
+
       <div>
         <header className="max-w-5xl mx-auto flex justify-between items-center pb-5 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
@@ -823,27 +814,14 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-white">لعبتنا</h1>
-              <p className="text-[10px] text-slate-400">المنظومة الرسمية لحجز الملاعب الرياضية</p>
+              <p className="text-[10px] text-slate-400">المنظومة السحابية لحجز الملاعب الرياضية في العراق</p>
             </div>
           </div>
 
           {currentUser.role !== 'guest' && (
             <div className="flex items-center gap-3">
               <div className="text-left">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-white block">{currentUser.name}</span>
-                  {currentUser.role === 'player' && (
-                    <button
-                      onClick={() => {
-                        setTempPlayerName(currentUser.name || '');
-                        setShowEditPlayerModal(true);
-                      }}
-                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-400 px-2 py-0.5 rounded-lg border border-slate-700"
-                    >
-                      تعديل الاسم ✏️
-                    </button>
-                  )}
-                </div>
+                <span className="text-xs font-bold text-white block">{currentUser.name}</span>
                 <span className="text-[10px] text-emerald-400 block font-mono">
                   {currentUser.role === 'player' ? `حساب كابتن (${currentUser.phone || 'Google'})` : currentUser.role === 'owner' ? `لوحة الملعب (${currentUser.phone})` : 'الإدارة العامة'}
                 </span>
@@ -861,11 +839,12 @@ export default function Home() {
 
         <main className="max-w-5xl mx-auto mt-6">
 
+          {/* واجهة الدخول للمنظومة */}
           {currentUser.role === 'guest' && (
             <div className="py-8 md:py-14 max-w-md mx-auto space-y-6">
               <div className="text-center space-y-2">
                 <h2 className="text-3xl font-black text-white">مرحباً بك في منصة لعبتنا</h2>
-                <p className="text-xs text-slate-400">سجل الدخول لحجز ملعبك أو إدارة حجوزاتك</p>
+                <p className="text-xs text-slate-400">سجل الدخول لحجز ساحتك أو إدارة مواعيد ملعبك</p>
               </div>
 
               <button
@@ -885,7 +864,7 @@ export default function Home() {
 
               <div className="flex items-center gap-3 text-xs text-slate-600">
                 <div className="flex-1 h-px bg-slate-800"></div>
-                <span>أو تسجيل الدخول برقم الهاتف</span>
+                <span>أو الدخول برقم الهاتف</span>
                 <div className="flex-1 h-px bg-slate-800"></div>
               </div>
 
@@ -895,7 +874,6 @@ export default function Home() {
                   onClick={() => {
                     setActivePortal('player');
                     setAuthMode('login');
-                    setPlayerRegStep(1);
                     setAuthError('');
                   }}
                   className={`py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
@@ -919,7 +897,6 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* تسجيل الدخول */}
               {authMode === 'login' && (
                 <form onSubmit={handleLogin} className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
@@ -952,7 +929,6 @@ export default function Home() {
                         onClick={() => {
                           setAuthMode('forgot');
                           setForgotPhone(loginPhone);
-                          setForgotStep(1);
                           setAuthError('');
                         }}
                         className="text-[11px] text-amber-400 hover:underline"
@@ -1001,7 +977,6 @@ export default function Home() {
                       type="button"
                       onClick={() => {
                         setAuthMode('register');
-                        setPlayerRegStep(1);
                         setAuthError('');
                       }}
                       className="text-emerald-400 font-bold hover:underline"
@@ -1012,9 +987,9 @@ export default function Home() {
                 </form>
               )}
 
-              {/* استرجاع وتغيير كلمة المرور */}
+              {/* استرجاع كلمة المرور */}
               {authMode === 'forgot' && (
-                <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
+                <form onSubmit={handleSendForgotOtp} className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
                     <h3 className="font-bold text-sm text-white flex items-center gap-2">
                       <RefreshCw className="w-4 h-4 text-amber-400" />
@@ -1032,88 +1007,53 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {forgotStep === 1 ? (
-                    <form onSubmit={handleSendForgotOtp} className="space-y-4">
-                      <div>
-                        <label className="text-xs text-slate-300 block mb-1">رقم الهاتف العراقي المسجل</label>
-                        <input
-                          type="tel"
-                          required
-                          maxLength={11}
-                          value={forgotPhone}
-                          onChange={(e) => setForgotPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                          placeholder="07XXXXXXXXX"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:border-amber-500 outline-none"
-                        />
-                      </div>
+                  <div>
+                    <label className="text-xs text-slate-300 block mb-1">رقم الهاتف العراقي المسجل</label>
+                    <input
+                      type="tel"
+                      required
+                      maxLength={11}
+                      value={forgotPhone}
+                      onChange={(e) => setForgotPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="07XXXXXXXXX"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:border-amber-500 outline-none"
+                    />
+                  </div>
 
-                      <div>
-                        <label className="text-xs text-slate-300 block mb-1">كلمة المرور الجديدة</label>
-                        <div className="relative">
-                          <input
-                            type={showResetPass ? "text" : "password"}
-                            required
-                            value={forgotNewPassword}
-                            onChange={(e) => setForgotNewPassword(e.target.value)}
-                            placeholder="اكتب كلمة مرور جديدة"
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-4 pl-10 py-2.5 text-xs text-white focus:border-amber-500 outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowResetPass(!showResetPass)}
-                            className="absolute left-3 top-2.5 text-slate-500 hover:text-slate-300"
-                          >
-                            {showResetPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      {authError && (
-                        <p className="text-xs text-rose-400 flex items-center gap-1 font-medium bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
-                          <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {authError}
-                        </p>
-                      )}
-
+                  <div>
+                    <label className="text-xs text-slate-300 block mb-1">كلمة المرور الجديدة</label>
+                    <div className="relative">
+                      <input
+                        type={showResetPass ? "text" : "password"}
+                        required
+                        value={forgotNewPassword}
+                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                        placeholder="اكتب كلمة مرور جديدة"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-4 pl-10 py-2.5 text-xs text-white focus:border-amber-500 outline-none"
+                      />
                       <button
-                        type="submit"
-                        disabled={authLoading}
-                        className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-amber-600 hover:bg-amber-500 text-slate-950 flex items-center justify-center gap-2"
+                        type="button"
+                        onClick={() => setShowResetPass(!showResetPass)}
+                        className="absolute left-3 top-2.5 text-slate-500 hover:text-slate-300"
                       >
-                        <MessageSquare className="w-4 h-4" />
-                        {authLoading ? 'جارٍ التحقق...' : 'إرسال رمز التأكيد وتحديث الرمز'}
+                        {showResetPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
-                    </form>
-                  ) : (
-                    <form onSubmit={handleVerifyForgotOtp} className="space-y-4">
-                      <div className="p-3 bg-emerald-950 border border-emerald-800 rounded-xl text-xs text-emerald-300">
-                        وصلك رمز تأكيد على رقمك ({forgotPhone}). أدخل الرمز لاعتماد كلمة المرور الجديدة:
-                      </div>
+                    </div>
+                  </div>
 
-                      <div>
-                        <label className="text-xs text-slate-300 block mb-1">رمز التحقق (6 أرقام)</label>
-                        <input
-                          type="text"
-                          required
-                          maxLength={6}
-                          value={forgotOtp}
-                          onChange={(e) => setForgotOtp(e.target.value.replace(/[^0-9]/g, ''))}
-                          placeholder="123456"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl text-center py-2.5 text-lg font-mono text-white tracking-widest focus:border-emerald-500 outline-none"
-                        />
-                      </div>
-
-                      {authError && <p className="text-xs text-rose-400">{authError}</p>}
-
-                      <button
-                        type="submit"
-                        disabled={authLoading}
-                        className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white"
-                      >
-                        {authLoading ? 'جارٍ الحفظ...' : 'تأكيد كلمة المرور والدخول'}
-                      </button>
-                    </form>
+                  {authError && (
+                    <p className="text-xs text-rose-400 flex items-center gap-1 font-medium bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {authError}
+                    </p>
                   )}
-                </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-amber-600 hover:bg-amber-500 text-slate-950"
+                  >
+                    تأكيد وتحديث كلمة المرور والدخول
+                  </button>
+                </form>
               )}
 
               {/* إنشاء حساب جديد */}
@@ -1121,25 +1061,19 @@ export default function Home() {
                 <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
                     <h3 className="font-bold text-sm text-white">
-                      {activePortal === 'owner' 
-                        ? 'إنشاء حساب صاحب ملعب (مباشر)' 
-                        : (playerRegStep === 1 ? 'إنشاء حساب لاعب (مع تحقق SMS)' : 'تأكيد رمز الـ SMS للاعب')}
+                      إنشاء حساب جديد ({activePortal === 'owner' ? 'صاحب ملعب' : 'لاعب'})
                     </h3>
                     <button
                       type="button"
-                      onClick={() => {
-                        setAuthMode('login');
-                        setPlayerRegStep(1);
-                        setAuthError('');
-                      }}
+                      onClick={() => setAuthMode('login')}
                       className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1"
                     >
                       <ArrowRight className="w-3.5 h-3.5" /> العودة للدخول
                     </button>
                   </div>
 
-                  {activePortal === 'owner' && (
-                    <form onSubmit={handleOwnerDirectRegister} className="space-y-4">
+                  {activePortal === 'owner' ? (
+                    <form onSubmit={handleOwnerDirectRegister} className="space-y-3">
                       <div>
                         <label className="text-xs text-slate-300 block mb-1">اسم صاحب الملعب</label>
                         <input
@@ -1164,16 +1098,30 @@ export default function Home() {
                         />
                       </div>
 
-                      <div>
-                        <label className="text-xs text-slate-300 block mb-1">الموقع والمنطقة</label>
-                        <input
-                          type="text"
-                          required
-                          value={regPitchArea}
-                          onChange={(e) => setRegPitchArea(e.target.value)}
-                          placeholder="مثال: بغداد - حي الجامعة"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
-                        />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-slate-300 block mb-1">المحافظة</label>
+                          <select
+                            value={regProvince}
+                            onChange={(e) => setRegProvince(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:border-amber-500 outline-none"
+                          >
+                            {IRAQ_PROVINCES.map(prov => (
+                              <option key={prov} value={prov}>{prov}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-300 block mb-1">المنطقة / الحي</label>
+                          <input
+                            type="text"
+                            required
+                            value={regPitchArea}
+                            onChange={(e) => setRegPitchArea(e.target.value)}
+                            placeholder="مثال: حي الجامعة"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:border-amber-500 outline-none"
+                          />
+                        </div>
                       </div>
 
                       <div>
@@ -1185,7 +1133,7 @@ export default function Home() {
                           value={regPhone}
                           onChange={(e) => setRegPhone(e.target.value.replace(/[^0-9]/g, ''))}
                           placeholder="07XXXXXXXXX"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:border-amber-500 outline-none"
                         />
                       </div>
 
@@ -1198,7 +1146,7 @@ export default function Home() {
                             value={regPassword}
                             onChange={(e) => setRegPassword(e.target.value)}
                             placeholder="اختر كلمة مرور"
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-4 pl-10 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-4 pl-10 py-2.5 text-xs text-white focus:border-amber-500 outline-none"
                           />
                           <button
                             type="button"
@@ -1211,8 +1159,8 @@ export default function Home() {
                       </div>
 
                       {authError && (
-                        <p className="text-xs text-rose-400 flex items-center gap-1 font-medium bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
-                          <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {authError}
+                        <p className="text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
+                          {authError}
                         </p>
                       )}
 
@@ -1223,137 +1171,88 @@ export default function Home() {
                         إنشاء حساب الملعب فوراً
                       </button>
                     </form>
-                  )}
+                  ) : (
+                    <form onSubmit={handlePlayerRegister} className="space-y-3">
+                      <div>
+                        <label className="text-xs text-slate-300 block mb-1">اسم الكابتن أو الفريق</label>
+                        <input
+                          type="text"
+                          required
+                          value={regName}
+                          onChange={(e) => setRegName(e.target.value)}
+                          placeholder="مثال: كابتن ليث"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:border-emerald-500 outline-none"
+                        />
+                      </div>
 
-                  {activePortal === 'player' && (
-                    <>
-                      {playerRegStep === 1 ? (
-                        <form onSubmit={handleSendPlayerSmsOtp} className="space-y-4">
-                          <div>
-                            <label className="text-xs text-slate-300 block mb-1">اسم الكابتن أو الفريق</label>
-                            <input
-                              type="text"
-                              required
-                              value={regName}
-                              onChange={(e) => setRegName(e.target.value)}
-                              placeholder="مثال: كابتن ليث"
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                            />
-                          </div>
+                      <div>
+                        <label className="text-xs text-slate-300 block mb-1">رقم الهاتف العراقي</label>
+                        <input
+                          type="tel"
+                          required
+                          maxLength={11}
+                          value={regPhone}
+                          onChange={(e) => setRegPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder="07XXXXXXXXX"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:border-emerald-500 outline-none"
+                        />
+                      </div>
 
-                          <div>
-                            <label className="text-xs text-slate-300 block mb-1">رقم الهاتف العراقي (يصلك عليه كود SMS)</label>
-                            <input
-                              type="tel"
-                              required
-                              maxLength={11}
-                              value={regPhone}
-                              onChange={(e) => setRegPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                              placeholder="07XXXXXXXXX"
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-xs text-slate-300 block mb-1">كلمة المرور</label>
-                            <div className="relative">
-                              <input
-                                type={showRegPass ? "text" : "password"}
-                                required
-                                value={regPassword}
-                                onChange={(e) => setRegPassword(e.target.value)}
-                                placeholder="اختر كلمة مرور"
-                                className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-4 pl-10 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowRegPass(!showRegPass)}
-                                className="absolute left-3 top-2.5 text-slate-500 hover:text-slate-300"
-                              >
-                                {showRegPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                              </button>
-                            </div>
-                          </div>
-
-                          {authError && (
-                            <p className="text-xs text-rose-400 flex items-center gap-1 font-medium bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
-                              <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {authError}
-                            </p>
-                          )}
-
-                          <button
-                            type="submit"
-                            disabled={authLoading}
-                            className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2"
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                            {authLoading ? 'جارٍ إرسال كود التحقق...' : 'إرسال كود التحقق الرسمي SMS'}
-                          </button>
-                        </form>
-                      ) : (
-                        <form onSubmit={handleVerifyPlayerSmsOtp} className="space-y-4">
-                          <div className="p-3 bg-emerald-950 border border-emerald-800 rounded-xl text-xs text-emerald-300">
-                            تم إرسال كود التحقق SMS إلى رقمك ({regPhone}). اكتب الرمز لتأكيد الحساب:
-                          </div>
-
-                          <div>
-                            <label className="text-xs text-slate-300 block mb-1">رمز التحقق (6 أرقام)</label>
-                            <input
-                              type="text"
-                              required
-                              maxLength={6}
-                              value={playerEnteredOtp}
-                              onChange={(e) => setPlayerEnteredOtp(e.target.value.replace(/[^0-9]/g, ''))}
-                              placeholder="123456"
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl text-center py-2.5 text-lg font-mono text-white tracking-widest focus:border-emerald-500"
-                            />
-                          </div>
-
-                          {authError && <p className="text-xs text-rose-400">{authError}</p>}
-
-                          <button
-                            type="submit"
-                            disabled={authLoading}
-                            className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white"
-                          >
-                            {authLoading ? 'جارٍ التأكيد...' : 'تأكيد الرمز والدخول إلى حسابي'}
-                          </button>
-
+                      <div>
+                        <label className="text-xs text-slate-300 block mb-1">كلمة المرور</label>
+                        <div className="relative">
+                          <input
+                            type={showRegPass ? "text" : "password"}
+                            required
+                            value={regPassword}
+                            onChange={(e) => setRegPassword(e.target.value)}
+                            placeholder="اختر كلمة مرور"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-4 pl-10 py-2.5 text-xs text-white focus:border-emerald-500 outline-none"
+                          />
                           <button
                             type="button"
-                            onClick={() => setPlayerRegStep(1)}
-                            className="w-full text-center text-xs text-slate-400 hover:underline pt-2 block"
+                            onClick={() => setShowRegPass(!showRegPass)}
+                            className="absolute left-3 top-2.5 text-slate-500 hover:text-slate-300"
                           >
-                            تعديل رقم الهاتف
+                            {showRegPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
-                        </form>
+                        </div>
+                      </div>
+
+                      {authError && (
+                        <p className="text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
+                          {authError}
+                        </p>
                       )}
-                    </>
+
+                      <button
+                        type="submit"
+                        className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+                      >
+                        تثبيت الحساب والدخول
+                      </button>
+                    </form>
                   )}
                 </div>
               )}
             </div>
           )}
 
+          {/* إكمال بروفايل Google لصاحب الملعب مع المحافظة */}
           {showGoogleOwnerSetup && googleUserTemp && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
               <div className="bg-slate-900 border border-amber-500/60 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-right relative">
                 <button
-                  onClick={handleCancelGoogleSetup}
+                  onClick={() => setShowGoogleOwnerSetup(false)}
                   className="absolute left-5 top-5 p-1 text-slate-400 hover:text-white bg-slate-800 rounded-lg"
-                  title="إلغاء وإغلاق"
                 >
                   <X className="w-4 h-4" />
                 </button>
 
                 <div className="flex items-center gap-2 text-amber-400 border-b border-slate-800 pb-3">
                   <LayoutDashboard className="w-5 h-5" />
-                  <h3 className="font-black text-sm text-white">إكمال بروفايل الملعب (بدون SMS)</h3>
+                  <h3 className="font-black text-sm text-white">إكمال بروفايل الملعب والمحافظة</h3>
                 </div>
-
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  أهلاً بك كابتن <strong className="text-white">{googleUserTemp.name}</strong>. يرجى كتابة بيانات ملعبك ورقم هاتفك العراقي لحفظه في النظام:
-                </p>
 
                 <form onSubmit={handleSaveGoogleOwnerProfile} className="space-y-3">
                   <div>
@@ -1363,25 +1262,39 @@ export default function Home() {
                       required
                       value={gPitchName}
                       onChange={(e) => setGPitchName(e.target.value)}
-                      placeholder="مثال: ملعب النسور الخماسي"
+                      placeholder="مثال: ملعب النسور الدولي"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="text-xs text-slate-300 block mb-1">الموقع والمنطقة</label>
-                    <input
-                      type="text"
-                      required
-                      value={gPitchArea}
-                      onChange={(e) => setGPitchArea(e.target.value)}
-                      placeholder="مثال: بغداد - العامرية"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none"
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-slate-300 block mb-1">المحافظة</label>
+                      <select
+                        value={gProvince}
+                        onChange={(e) => setGProvince(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none"
+                      >
+                        {IRAQ_PROVINCES.map(prov => (
+                          <option key={prov} value={prov}>{prov}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-300 block mb-1">المنطقة / الحي</label>
+                      <input
+                        type="text"
+                        required
+                        value={gPitchArea}
+                        onChange={(e) => setGPitchArea(e.target.value)}
+                        placeholder="مثال: العامرية"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none"
+                      />
+                    </div>
                   </div>
 
                   <div>
-                    <label className="text-xs text-slate-300 block mb-1">رقم هاتفك العراقي (لحفظه في لوحة الإدارة)</label>
+                    <label className="text-xs text-slate-300 block mb-1">رقم الهاتف العراقي</label>
                     <input
                       type="tel"
                       required
@@ -1393,68 +1306,14 @@ export default function Home() {
                     />
                   </div>
 
-                  {authError && (
-                    <p className="text-xs text-rose-400 flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5" /> {authError}
-                    </p>
-                  )}
+                  {authError && <p className="text-xs text-rose-400">{authError}</p>}
 
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <button
-                      type="submit"
-                      className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs transition-all"
-                    >
-                      حفظ وبدء العمل
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelGoogleSetup}
-                      className="bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold py-2.5 rounded-xl text-xs"
-                    >
-                      إلغاء وتراجع
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {showEditPlayerModal && (
-            <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-              <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 space-y-4 text-right">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                  <h4 className="font-bold text-white text-sm">تعديل اسم اللاعب / الفريق</h4>
-                  <button onClick={() => setShowEditPlayerModal(false)} className="text-slate-400 hover:text-white">
-                    <X className="w-4 h-4" />
+                  <button
+                    type="submit"
+                    className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs transition-all"
+                  >
+                    حفظ واعتماد في السحابة
                   </button>
-                </div>
-                <form onSubmit={handleSaveNewPlayerName} className="space-y-3">
-                  <div>
-                    <label className="text-xs text-slate-300 block mb-1">الاسم الجديد:</label>
-                    <input
-                      type="text"
-                      required
-                      value={tempPlayerName}
-                      onChange={(e) => setTempPlayerName(e.target.value)}
-                      placeholder="اكتب اسمك الجديد"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 outline-none"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <button
-                      type="submit"
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-xl text-xs"
-                    >
-                      حفظ التغيير
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowEditPlayerModal(false)}
-                      className="bg-slate-800 text-slate-300 font-bold py-2 rounded-xl text-xs"
-                    >
-                      إلغاء
-                    </button>
-                  </div>
                 </form>
               </div>
             </div>
@@ -1487,7 +1346,7 @@ export default function Home() {
                     <div className="flex justify-between items-center pb-2 border-b border-slate-900">
                       <span className="text-slate-400">رقم تحويل زين كاش المعتمد:</span>
                       <span className="text-amber-400 font-mono font-black text-base select-all bg-slate-900 px-3 py-1 rounded-lg border border-slate-750">
-                        {officialAdminPhone}
+                        {OFFICIAL_PAYMENT_PHONE}
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-400">
@@ -1502,7 +1361,7 @@ export default function Home() {
                       rel="noopener noreferrer"
                       className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg shadow-emerald-950"
                     >
-                      إرسال سكرين شوت التحويل عبر واتساب ({officialAdminPhone})
+                      إرسال سكرين شوت التحويل عبر واتساب ({OFFICIAL_PAYMENT_PHONE})
                     </a>
 
                     {currentOwnerPitch.lastRenewDate !== '-' ? (
@@ -1544,7 +1403,7 @@ export default function Home() {
                         ownerTab === 'profile' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <Edit3 className="w-4 h-4" /> تعديل بيانات وصورة وساعات الملعب
+                      <Edit3 className="w-4 h-4" /> تعديل بيانات وصورة الملعب والمحافظة
                     </button>
                   </div>
 
@@ -1677,7 +1536,7 @@ export default function Home() {
                     <form onSubmit={saveFullSettings} className="space-y-6 max-w-3xl">
                       {profileSavedToast && (
                         <div className="p-3 bg-emerald-950 border border-emerald-600 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات وصورة الملعب بنجاح!
+                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات سحابياً في Firestore بنجاح!
                         </div>
                       )}
 
@@ -1702,19 +1561,18 @@ export default function Home() {
                                   className="hidden" 
                                 />
                               </label>
-                              <div className="text-[11px] text-slate-500">أو يمكنك وضع رابط مباشر للصورة أدناه:</div>
                               <input
                                 type="url"
                                 value={editImage}
                                 onChange={(e) => setEditImage(e.target.value)}
-                                placeholder="https://..."
+                                placeholder="أو اكتب رابط الصورة المباشر هنا..."
                                 className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white"
                               />
                             </div>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div>
                             <label className="text-xs text-slate-300 block mb-1">اسم الملعب:</label>
                             <input
@@ -1725,7 +1583,19 @@ export default function Home() {
                             />
                           </div>
                           <div>
-                            <label className="text-xs text-slate-300 block mb-1">الموقع والمنطقة:</label>
+                            <label className="text-xs text-slate-300 block mb-1">المحافظة:</label>
+                            <select
+                              value={editProvince}
+                              onChange={(e) => setEditProvince(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+                            >
+                              {IRAQ_PROVINCES.map(prov => (
+                                <option key={prov} value={prov}>{prov}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-300 block mb-1">المنطقة والحي:</label>
                             <input
                               type="text"
                               value={editArea}
@@ -1744,23 +1614,6 @@ export default function Home() {
                           />
                         </div>
 
-                        <h4 className="font-bold text-white text-base pt-3 border-t border-slate-800">ساعات العمل المتاحة للحجز</h4>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-60 overflow-y-auto">
-                          {MASTER_24_HOURS.map(slot => (
-                            <button
-                              type="button"
-                              key={slot.h}
-                              onClick={() => toggleHour24(slot.h)}
-                              className={`p-2.5 rounded-xl border text-right text-xs transition-all flex justify-between items-center ${
-                                selectedHours24.includes(slot.h) ? 'bg-emerald-950 border-emerald-600 text-white' : 'bg-slate-950 border-slate-800 text-slate-500'
-                              }`}
-                            >
-                              <span>{slot.label}</span>
-                              {selectedHours24.includes(slot.h) ? <CheckSquare className="w-3.5 h-3.5 text-emerald-400" /> : <Square className="w-3.5 h-3.5 text-slate-600" />}
-                            </button>
-                          ))}
-                        </div>
-
                         <div className="pt-3 border-t border-slate-800">
                           <label className="text-xs text-slate-300 block mb-1">سعر الساعة (د.ع):</label>
                           <input
@@ -1776,7 +1629,7 @@ export default function Home() {
                         type="submit"
                         className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-3 rounded-xl text-xs transition-all shadow-lg"
                       >
-                        حفظ التعديلات وتحديث صورة الملعب
+                        حفظ التعديلات في السحابة
                       </button>
                     </form>
                   )}
@@ -1790,20 +1643,53 @@ export default function Home() {
             <div>
               {!selectedPitchId ? (
                 <div className="space-y-6">
-                  <div className="text-center py-4 max-w-xl mx-auto">
+                  <div className="text-center py-4 max-w-xl mx-auto space-y-2">
                     <h2 className="text-2xl font-black text-white">الملاعب الرياضية المتاحة</h2>
-                    <p className="text-xs text-slate-400 mt-1">اختر ملعبك المفضل وتصفح الأوقات الشاغرة فوراً</p>
+                    <p className="text-xs text-slate-400">اختر محافظتك وتصفح الملاعب المجهزة بالكامل</p>
+
+                    {/* أشرطة فلترة المحافظات العراقية */}
+                    <div className="flex items-center justify-center gap-1.5 flex-wrap pt-3">
+                      <button
+                        onClick={() => setSelectedProvinceFilter('الكل')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          selectedProvinceFilter === 'الكل' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        كل العراق
+                      </button>
+                      {IRAQ_PROVINCES.slice(0, 7).map(prov => (
+                        <button
+                          key={prov}
+                          onClick={() => setSelectedProvinceFilter(prov)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                            selectedProvinceFilter === prov ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {prov}
+                        </button>
+                      ))}
+                      <select
+                        value={selectedProvinceFilter}
+                        onChange={(e) => setSelectedProvinceFilter(e.target.value)}
+                        className="bg-slate-900 border border-slate-800 text-slate-300 text-xs rounded-xl px-2.5 py-1.5 outline-none font-bold"
+                      >
+                        <option value="الكل">باقي المحافظات...</option>
+                        {IRAQ_PROVINCES.map(p => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
 
-                  {pitchesList.filter(p => p.subscriptionStatus === 'active').length === 0 ? (
+                  {displayedPitches.length === 0 ? (
                     <div className="bg-slate-900 border border-slate-800 p-10 rounded-3xl text-center space-y-3 max-w-md mx-auto">
                       <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
-                      <h4 className="font-bold text-white text-base">لا توجد ملاعب متاحة حالياً</h4>
-                      <p className="text-xs text-slate-400">جميع اشتراكات الملاعب معطلة أو منتهية حالياً.</p>
+                      <h4 className="font-bold text-white text-base">لا توجد ملاعب في {selectedProvinceFilter}</h4>
+                      <p className="text-xs text-slate-400">جرب اختيار محافظة أخرى أو تصفح كل العراق.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      {pitchesList.filter(p => p.subscriptionStatus === 'active').map(p => (
+                      {displayedPitches.map(p => (
                         <div
                           key={p.id}
                           onClick={() => setSelectedPitchId(p.id)}
@@ -1816,7 +1702,7 @@ export default function Home() {
                               <span className="text-emerald-400 font-bold text-sm">{p.defaultPricePerHour.toLocaleString()} د.ع</span>
                             </div>
                             <p className="text-xs text-slate-400 flex items-center gap-1">
-                              <MapPin className="w-3.5 h-3.5" /> {p.area}
+                              <MapPin className="w-3.5 h-3.5 text-emerald-400" /> {p.city} - {p.area}
                             </p>
                             <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs text-emerald-400 font-bold">
                               <span>حجز موعد الآن</span>
@@ -1839,7 +1725,12 @@ export default function Home() {
 
                   {activePitchForPlayer && (
                     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
-                      <h2 className="text-2xl font-black text-white">{activePitchForPlayer.name}</h2>
+                      <div>
+                        <h2 className="text-2xl font-black text-white">{activePitchForPlayer.name}</h2>
+                        <span className="text-xs text-emerald-400 font-bold flex items-center gap-1 mt-1">
+                          <MapPin className="w-3.5 h-3.5" /> {activePitchForPlayer.city} - {activePitchForPlayer.area}
+                        </span>
+                      </div>
                       <p className="text-xs text-slate-300">{activePitchForPlayer.bio}</p>
 
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
@@ -1890,83 +1781,84 @@ export default function Home() {
             </div>
           )}
 
-          {/* 3. لوحة الإدارة المركزية */}
+          {/* 3. لوحة الإدارة العامة المركزية */}
           {currentUser.role === 'admin' && (
             <div className="bg-slate-900 border border-blue-900/60 p-6 rounded-3xl space-y-6">
               <div className="flex items-center gap-2 text-blue-400 border-b border-slate-800 pb-3">
                 <ShieldCheck className="w-6 h-6" />
-                <h3 className="text-lg font-black text-white">لوحة الإدارة المركزية (تحكم الملاعب والاشتراكات)</h3>
+                <h3 className="text-lg font-black text-white">لوحة الإدارة السحابية المركزية</h3>
               </div>
 
-              {pitchesList.length === 0 ? (
-                <div className="bg-slate-950 p-8 rounded-2xl border border-slate-800 text-center text-slate-400 text-xs">
-                  لا توجد ملاعب في النظام حالياً.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {pitchesList.map(p => (
-                    <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
-                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
-                        <div>
-                          <h4 className="font-bold text-white text-base">{p.name}</h4>
-                          <p className="text-xs text-slate-400 mt-0.5">المنطقة: {p.area}</p>
-                        </div>
-                        <span className={`text-xs px-3 py-1 rounded-full font-bold ${
-                          p.subscriptionStatus === 'active' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
-                        }`}>
-                          {p.subscriptionStatus === 'active' ? `نشط (${p.subscriptionDaysLeft} يوم متبقي)` : 'معطل / منتهي'}
-                        </span>
+              <div className="space-y-4">
+                {pitchesList.map(p => (
+                  <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
+                      <div>
+                        <h4 className="font-bold text-white text-base">{p.name}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">{p.city} - {p.area}</p>
                       </div>
+                      <span className={`text-xs px-3 py-1 rounded-full font-bold ${
+                        p.subscriptionStatus === 'active' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                      }`}>
+                        {p.subscriptionStatus === 'active' ? `نشط (${p.subscriptionDaysLeft} يوم)` : 'معطل / منتهي'}
+                      </span>
+                    </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                          <span className="text-slate-400 block">صاحب الملعب:</span>
-                          <span className="text-white font-bold text-sm block">{p.ownerName}</span>
-                        </div>
-                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                          <span className="text-slate-400 block">رقم الهاتف الفعلي:</span>
-                          <span className="text-emerald-400 font-mono font-bold text-sm block">{p.ownerPhone}</span>
-                          {p.ownerEmail && <span className="text-[10px] text-slate-500 block truncate">{p.ownerEmail}</span>}
-                        </div>
-                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                          <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
-                          <span className="text-amber-400 font-mono font-bold text-sm block">{p.lastRenewDate}</span>
-                        </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                        <span className="text-slate-400 block">صاحب الملعب:</span>
+                        <span className="text-white font-bold text-sm block">{p.ownerName}</span>
                       </div>
-
-                      <div className="pt-2 flex flex-wrap gap-3">
-                        <button
-                          onClick={() => {
-                            setTargetActionPitchId(p.id);
-                            setAdminConfirmAction('renew');
-                          }}
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                        >
-                          + تمديد 30 يوماً
-                        </button>
-                        <button
-                          onClick={() => {
-                            setTargetActionPitchId(p.id);
-                            setAdminConfirmAction('expire');
-                          }}
-                          className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                        >
-                          تعطيل الحساب
-                        </button>
-                        <button
-                          onClick={() => {
-                            setTargetActionPitchId(p.id);
-                            setAdminConfirmAction('delete');
-                          }}
-                          className="bg-slate-800 hover:bg-rose-900 text-rose-400 hover:text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all border border-slate-700"
-                        >
-                          حذف نهائياً
-                        </button>
+                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                        <span className="text-slate-400 block">رقم الهاتف:</span>
+                        <span className="text-emerald-400 font-mono font-bold text-sm block">{p.ownerPhone}</span>
+                      </div>
+                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                        <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
+                        <span className="text-amber-400 font-mono font-bold text-sm block">{p.lastRenewDate}</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+
+                    <div className="pt-2 flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          const today = new Date().toISOString().split('T')[0];
+                          await updateDoc(doc(db, 'pitches', p.id), {
+                            subscriptionStatus: 'active',
+                            subscriptionDaysLeft: (p.subscriptionDaysLeft || 0) + 30,
+                            lastRenewDate: today,
+                            usedEmergencyExtension: false
+                          });
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                      >
+                        + تمديد 30 يوماً
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await updateDoc(doc(db, 'pitches', p.id), {
+                            subscriptionStatus: 'expired',
+                            subscriptionDaysLeft: 0
+                          });
+                        }}
+                        className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                      >
+                        تعطيل الحساب
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (confirm('هل أنت متأكد من حذف الملعب نهائياً؟')) {
+                            await deleteDoc(doc(db, 'pitches', p.id));
+                          }
+                        }}
+                        className="bg-slate-800 hover:bg-rose-900 text-rose-400 hover:text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all border border-slate-700"
+                      >
+                        حذف نهائياً
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1987,85 +1879,108 @@ export default function Home() {
         </button>
       </footer>
 
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-4 text-center">
-            <div className="w-12 h-12 bg-rose-950 border border-rose-800 text-rose-400 rounded-2xl flex items-center justify-center mx-auto">
-              <LogOut className="w-6 h-6" />
+      {/* نافذة تأكيد حجز الموعد */}
+      {selectedSlot && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h4 className="font-bold text-white text-base">تأكيد حجز الموعد السحابي</h4>
+              <button onClick={() => setSelectedSlot(null)} className="text-slate-400 text-xs">إلغاء</button>
             </div>
-            <h5 className="font-black text-white text-base">هل أنت متأكد من تسجيل الخروج؟</h5>
-            <p className="text-xs text-slate-400">ستحتاج لإعادة تسجيل الدخول للوصول لحسابك مجدداً.</p>
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                onClick={() => {
-                  setCurrentUser({ role: 'guest' });
-                  setSelectedPitchId(null);
-                  setShowLogoutConfirm(false);
-                }}
-                className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all"
-              >
-                تأكيد الخروج
+
+            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs space-y-1">
+              <div className="flex justify-between text-slate-400">
+                <span>الوقت:</span>
+                <span className="text-emerald-400 font-bold">{selectedSlot.time}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>المبلغ:</span>
+                <span className="text-white font-bold">{selectedSlot.price.toLocaleString()} د.ع</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmPlayerBooking} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-300 block mb-1">اسم الكابتن أو الفريق:</label>
+                <input
+                  type="text"
+                  required
+                  value={bookingCaptainName}
+                  onChange={(e) => setBookingCaptainName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-300 block mb-1">رقم الهاتف:</label>
+                <input
+                  type="tel"
+                  required
+                  maxLength={11}
+                  value={bookingCaptainPhone}
+                  onChange={(e) => setBookingCaptainPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs shadow-lg">
+                تأكيد تثبيت الحجز في السحابة
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة الحجز اليدوي لصاحب الملعب */}
+      {ownerManualSlot && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-amber-800/80 w-full max-w-md rounded-2xl p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h4 className="font-bold text-base text-white">تسجيل حجز هاتفي يدوي</h4>
+              <button onClick={() => setOwnerManualSlot(null)} className="text-slate-400 text-xs">إلغاء</button>
+            </div>
+            <div className="space-y-3">
+              <input
+                type="text"
+                required
+                value={ownerTeamName}
+                onChange={(e) => setOwnerTeamName(e.target.value)}
+                placeholder="اسم الفريق / الكابتن"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+              />
+              <input
+                type="tel"
+                required
+                maxLength={11}
+                value={ownerTeamPhone}
+                onChange={(e) => setOwnerTeamPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="رقم الهاتف (07XXXXXXXXX)"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white font-mono"
+              />
               <button
-                onClick={() => setShowLogoutConfirm(false)}
-                className="bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-all"
+                onClick={handleOwnerManualBookingSubmit}
+                className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs shadow-md"
               >
-                تراجع
+                تثبيت الحجز في السحابة
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {adminConfirmAction && targetActionPitchId && (
+      {/* نافذة تفريغ الساعة */}
+      {slotToConfirmCancel && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-center">
-            <div className="w-12 h-12 bg-amber-950 border border-amber-800 text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+          <div className="bg-slate-900 border border-rose-800 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 bg-rose-950 border border-rose-800 text-rose-400 rounded-2xl flex items-center justify-center mx-auto">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <h5 className="font-black text-white text-base">
-              {adminConfirmAction === 'renew' && 'هل أنت متأكد من تمديد هذا الملعب 30 يوماً؟'}
-              {adminConfirmAction === 'expire' && 'هل أنت متأكد من تعطيل هذا الملعب؟'}
-              {adminConfirmAction === 'delete' && 'تحذير: هل أنت متأكد من حذف الملعب نهائياً؟'}
-            </h5>
+            <h5 className="font-black text-white text-base">هل أنت متأكد من تفريغ الساعة؟</h5>
             <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                onClick={() => {
-                  const today = new Date().toISOString().split('T')[0];
-                  if (adminConfirmAction === 'renew') {
-                    setPitchesList(prev => prev.map(p => p.id === targetActionPitchId ? {
-                      ...p,
-                      subscriptionStatus: 'active',
-                      subscriptionDaysLeft: p.subscriptionDaysLeft + 30,
-                      lastRenewDate: today,
-                      usedEmergencyExtension: false
-                    } : p));
-                  } else if (adminConfirmAction === 'expire') {
-                    setPitchesList(prev => prev.map(p => p.id === targetActionPitchId ? {
-                      ...p,
-                      subscriptionStatus: 'expired',
-                      subscriptionDaysLeft: 0
-                    } : p));
-                  } else if (adminConfirmAction === 'delete') {
-                    setPitchesList(prev => prev.filter(p => p.id !== targetActionPitchId));
-                    setSelectedPitchId(null);
-                  }
-                  setAdminConfirmAction(null);
-                  setTargetActionPitchId(null);
-                }}
-                className={`text-white font-bold py-2.5 rounded-xl text-xs ${
-                  adminConfirmAction === 'delete' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500'
-                }`}
-              >
-                تأكيد التنفيذ
+              <button onClick={executeClearSlot} className="bg-rose-600 text-white font-bold py-2.5 rounded-xl text-xs">
+                تأكيد التفريغ
               </button>
-              <button
-                onClick={() => {
-                  setAdminConfirmAction(null);
-                  setTargetActionPitchId(null);
-                }}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs"
-              >
+              <button onClick={() => setSlotToConfirmCancel(null)} className="bg-slate-800 text-slate-300 font-bold py-2.5 rounded-xl text-xs">
                 تراجع
               </button>
             </div>
@@ -2073,7 +1988,49 @@ export default function Home() {
         </div>
       )}
 
-      {/* نافذة دخول الإدارة المركزية (بحقول نظيفة ورسائل خطأ معزولة) */}
+      {/* نافذة تفاصيل الحجز */}
+      {viewDetailsSlot && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-6 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h4 className="font-black text-base text-white">تفاصيل الحجز ({viewDetailsSlot.time})</h4>
+              <button onClick={() => setViewDetailsSlot(null)} className="text-slate-400 text-xs">إغلاق</button>
+            </div>
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">الحاجز:</span>
+                <span className="text-white font-bold">{viewDetailsSlot.bookedBy}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">رقم الهاتف:</span>
+                <span className="text-emerald-400 font-mono font-bold text-sm">{viewDetailsSlot.phone}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">المبلغ:</span>
+                <span className="text-white font-bold">{viewDetailsSlot.price.toLocaleString()} د.ع</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href={`tel:${viewDetailsSlot.phone}`}
+                className="bg-slate-800 hover:bg-slate-750 text-white py-2 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1"
+              >
+                <PhoneCall className="w-3.5 h-3.5" /> اتصال
+              </a>
+              <a
+                href={`https://wa.me/964${viewDetailsSlot.phone?.replace(/^0/, '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1"
+              >
+                واتساب
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة دخول الإدارة المركزية */}
       {showAdminModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-blue-900/80 w-full max-w-xs rounded-3xl p-6 space-y-4 text-center">
@@ -2125,148 +2082,32 @@ export default function Home() {
         </div>
       )}
 
-      {selectedSlot && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 space-y-4">
-            <div className="flex justify-between items-center">
-              <h4 className="font-bold text-white text-base">تأكيد حجز الموعد</h4>
-              <button onClick={() => setSelectedSlot(null)} className="text-slate-400 text-xs">إلغاء</button>
-            </div>
-
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs space-y-1">
-              <div className="flex justify-between text-slate-400">
-                <span>الوقت:</span>
-                <span className="text-emerald-400 font-bold">{selectedSlot.time}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>المبلغ:</span>
-                <span className="text-white font-bold">{selectedSlot.price.toLocaleString()} د.ع</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleConfirmPlayerBooking} className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-300 block mb-1">اسم الكابتن أو الفريق:</label>
-                <input
-                  type="text"
-                  required
-                  value={bookingCaptainName}
-                  onChange={(e) => setBookingCaptainName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-300 block mb-1">رقم الهاتف:</label>
-                <input
-                  type="tel"
-                  required
-                  maxLength={11}
-                  value={bookingCaptainPhone}
-                  onChange={(e) => setBookingCaptainPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white font-mono"
-                />
-              </div>
-
-              <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs">
-                تأكيد تثبيت الحجز
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {ownerManualSlot && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-amber-800/80 w-full max-w-md rounded-2xl p-6 space-y-4">
-            <div className="flex justify-between items-center">
-              <h4 className="font-bold text-base text-white">تسجيل حجز هاتفي يدوي</h4>
-              <button onClick={() => setOwnerManualSlot(null)} className="text-slate-400 text-xs">إلغاء</button>
-            </div>
-            <div className="space-y-3">
-              <input
-                type="text"
-                required
-                value={ownerTeamName}
-                onChange={(e) => setOwnerTeamName(e.target.value)}
-                placeholder="اسم الفريق / الكابتن"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
-              />
-              <input
-                type="tel"
-                required
-                maxLength={11}
-                value={ownerTeamPhone}
-                onChange={(e) => setOwnerTeamPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                placeholder="رقم الهاتف (07XXXXXXXXX)"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white font-mono"
-              />
-              <button
-                onClick={handleOwnerManualBookingSubmit}
-                className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs"
-              >
-                تثبيت الحجز
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {slotToConfirmCancel && (
+      {/* نافذة تأكيد الخروج */}
+      {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-rose-800 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-center">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-4 text-center">
             <div className="w-12 h-12 bg-rose-950 border border-rose-800 text-rose-400 rounded-2xl flex items-center justify-center mx-auto">
-              <AlertTriangle className="w-6 h-6" />
+              <LogOut className="w-6 h-6" />
             </div>
-            <h5 className="font-black text-white text-base">هل أنت متأكد من تفريغ الساعة؟</h5>
+            <h5 className="font-black text-white text-base">هل أنت متأكد من تسجيل الخروج؟</h5>
+            <p className="text-xs text-slate-400">ستحتاج لإعادة تسجيل الدخول للوصول لحسابك مجدداً.</p>
             <div className="grid grid-cols-2 gap-3 pt-2">
-              <button onClick={executeClearSlot} className="bg-rose-600 text-white font-bold py-2.5 rounded-xl text-xs">
-                تأكيد التفريغ
+              <button
+                onClick={() => {
+                  setCurrentUser({ role: 'guest' });
+                  setSelectedPitchId(null);
+                  setShowLogoutConfirm(false);
+                }}
+                className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all"
+              >
+                تأكيد الخروج
               </button>
-              <button onClick={() => setSlotToConfirmCancel(null)} className="bg-slate-800 text-slate-300 font-bold py-2.5 rounded-xl text-xs">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-all"
+              >
                 تراجع
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {viewDetailsSlot && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-3xl p-6 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h4 className="font-black text-base text-white">تفاصيل الحجز ({viewDetailsSlot.time})</h4>
-              <button onClick={() => setViewDetailsSlot(null)} className="text-slate-400 text-xs">إغلاق</button>
-            </div>
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-400">الحاجز:</span>
-                <span className="text-white font-bold">{viewDetailsSlot.bookedBy}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">رقم الهاتف:</span>
-                <span className="text-emerald-400 font-mono font-bold text-sm">{viewDetailsSlot.phone}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">المبلغ:</span>
-                <span className="text-white font-bold">{viewDetailsSlot.price.toLocaleString()} د.ع</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <a
-                href={`tel:${viewDetailsSlot.phone}`}
-                className="bg-slate-800 hover:bg-slate-750 text-white py-2 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1"
-              >
-                <PhoneCall className="w-3.5 h-3.5" /> اتصال
-              </a>
-              <a
-                href={`https://wa.me/964${viewDetailsSlot.phone?.replace(/^0/, '')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1"
-              >
-                واتساب
-              </a>
             </div>
           </div>
         </div>
