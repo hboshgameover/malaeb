@@ -1,3 +1,4 @@
+// Updated: 2026-09-13 - Force Production Build with Verified Keys
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
