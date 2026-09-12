@@ -26,7 +26,9 @@ import {
   KeyRound,
   X,
   Zap,
-  MessageSquare
+  MessageSquare,
+  Upload,
+  Image as ImageIcon
 } from 'lucide-react';
 import { auth, googleProvider } from '@/lib/firebase';
 import { 
@@ -193,7 +195,6 @@ export default function Home() {
   const [schedulePrice, setSchedulePrice] = useState(20000);
   const [revenueFilter, setRevenueFilter] = useState<'daily' | 'monthly'>('daily');
 
-  // رقمك الرسمي المعتمد
   const officialAdminPhone = "07712227779";
   const adminWhatsAppNumber = "9647712227779";
 
@@ -263,7 +264,7 @@ export default function Home() {
       setEditName(currentOwnerPitch.name);
       setEditArea(currentOwnerPitch.area);
       setEditBio(currentOwnerPitch.bio);
-      setEditImage(currentOwnerPitch.imageUrl);
+      setEditImage(currentOwnerPitch.imageUrl || '');
       setSchedulePrice(currentOwnerPitch.defaultPricePerHour);
     }
   }, [currentOwnerPitch?.id]);
@@ -289,13 +290,29 @@ export default function Home() {
     `مرحباً إدارة لعبتنا ⚽\nأنا صاحب ملعب (${currentOwnerPitch?.name || 'الملعب'}). حولت مبلغ الاشتراك على رقم زين كاش المعتمد (${officialAdminPhone}).\nمرفق لكم سكرين شوت التحويل 📸👇`
   )}`;
 
-  // تفعيل التمديد الطارئ (مهلة 24 ساعة)
+  // رفع صورة الملعب من الاستوديو/الملفات
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert('حجم الصورة كبير، يرجى اختيار صورة أقل من 2 ميغابايت');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // تفعيل التمديد الطارئ لمرة واحدة فقط للمشتركين السابقين
   const handleActivateEmergencyExtension = () => {
     if (!currentOwnerPitch) return;
     setPitchesList(prev => prev.map(p => p.id === currentOwnerPitch.id ? {
       ...p,
       subscriptionStatus: 'active',
-      subscriptionDaysLeft: 1, // مهلة 24 ساعة
+      subscriptionDaysLeft: 1,
       usedEmergencyExtension: true
     } : p));
   };
@@ -444,7 +461,7 @@ export default function Home() {
       setConfirmationResult(conf);
       setPlayerRegStep(2);
     } catch (err: any) {
-      setAuthError('فشل إرسال كود التحقق: تأكد من تفعيل العراق وحفظ الإعداد');
+      setAuthError('فشل إرسال كود التحقق: تأكد من صحة الرقم وحفظ إعدادات Firebase');
     } finally {
       setAuthLoading(false);
     }
@@ -1165,9 +1182,13 @@ export default function Home() {
                     <Lock className="w-8 h-8" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-white">انتهى اشتراك ملعب ({currentOwnerPitch.name})</h3>
+                    <h3 className="text-2xl font-black text-white">
+                      {currentOwnerPitch.lastRenewDate === '-' ? 'تفعيل اشتراك الملعب لأول مرة' : `انتهى اشتراك ملعب (${currentOwnerPitch.name})`}
+                    </h3>
                     <p className="text-xs md:text-sm text-slate-400 mt-2 max-w-md mx-auto leading-relaxed">
-                      انتهت صلاحية اشتراك هذا الملعب. يرجى تجديد الاشتراك الشهري عبر محفظة زين كاش للمتابعة.
+                      {currentOwnerPitch.lastRenewDate === '-' 
+                        ? 'يرجى تحويل مبلغ الاشتراك الأول عبر محفظة زين كاش لاعتماد الملعب ونشره في المنظومة.' 
+                        : 'انتهت صلاحية اشتراك هذا الملعب. يرجى تجديد الاشتراك الشهري عبر محفظة زين كاش للمتابعة.'}
                     </p>
                   </div>
 
@@ -1197,19 +1218,25 @@ export default function Home() {
                       إرسال سكرين شوت التحويل عبر واتساب ({officialAdminPhone})
                     </a>
 
-                    {/* زر التمديد الطارئ المباشر */}
-                    {!currentOwnerPitch.usedEmergencyExtension ? (
-                      <button
-                        type="button"
-                        onClick={handleActivateEmergencyExtension}
-                        className="w-full bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/60 text-amber-300 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
-                      >
-                        <Zap className="w-4 h-4 text-amber-400" />
-                        طلب تمديد طارئ (مهلة 24 ساعة لاستمرار الحجوزات)
-                      </button>
+                    {/* يظهر التمديد الطارئ فقط للمشتركين السابقين الذين انتهى اشتراكهم ولم يستخدموه مسبقاً */}
+                    {currentOwnerPitch.lastRenewDate !== '-' ? (
+                      !currentOwnerPitch.usedEmergencyExtension ? (
+                        <button
+                          type="button"
+                          onClick={handleActivateEmergencyExtension}
+                          className="w-full bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/60 text-amber-300 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
+                        >
+                          <Zap className="w-4 h-4 text-amber-400" />
+                          طلب تمديد طارئ (مهلة 24 ساعة لاستمرار الحجوزات)
+                        </button>
+                      ) : (
+                        <div className="text-[11px] text-slate-500 border border-slate-800 py-2 rounded-xl bg-slate-950">
+                          لقد استخدمت التمديد الطارئ لمرة واحدة مسبقاً، يرجى إتمام التحويل لتفعيل الشهر الجديد.
+                        </div>
+                      )
                     ) : (
                       <div className="text-[11px] text-slate-500 border border-slate-800 py-2 rounded-xl bg-slate-950">
-                        لقد استخدمت التمديد الطارئ سابقاً، يرجى إتمام التحويل لتفعيل الشهر الجديد.
+                        (هذا الحساب بانتظار الدفع الأول لاعتماده، التمديد الطارئ متاح فقط عند انتهاء اشتراك فعلي سابق)
                       </div>
                     )}
                   </div>
@@ -1231,7 +1258,7 @@ export default function Home() {
                         ownerTab === 'profile' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <Edit3 className="w-4 h-4" /> تعديل بيانات وساعات الملعب
+                      <Edit3 className="w-4 h-4" /> تعديل بيانات وصورة وساعات الملعب
                     </button>
                   </div>
 
@@ -1364,11 +1391,44 @@ export default function Home() {
                     <form onSubmit={saveFullSettings} className="space-y-6 max-w-3xl">
                       {profileSavedToast && (
                         <div className="p-3 bg-emerald-950 border border-emerald-600 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات في النظام بنجاح!
+                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات وصورة الملعب بنجاح!
                         </div>
                       )}
-                      <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4">
-                        <h4 className="font-bold text-white text-base">بيانات الملعب الأساسية</h4>
+
+                      <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-5">
+                        <h4 className="font-bold text-white text-base">بيانات الملعب وصورته</h4>
+
+                        {/* قسم رفع صورة الملعب ومعاينتها */}
+                        <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                          <label className="text-xs text-slate-300 block font-bold">صورة واجهة الملعب:</label>
+                          <div className="flex flex-col sm:flex-row items-center gap-4">
+                            <img 
+                              src={editImage || 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60'} 
+                              alt="معاينة الملعب" 
+                              className="w-32 h-24 object-cover rounded-xl border border-slate-850 shadow-md flex-shrink-0"
+                            />
+                            <div className="space-y-2 w-full">
+                              <label className="bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold px-4 py-2.5 rounded-xl text-xs cursor-pointer inline-flex items-center gap-2 border border-slate-700 transition-all">
+                                <Upload className="w-4 h-4" /> اختيار صورة من الاستوديو / الجهاز
+                                <input 
+                                  type="file" 
+                                  accept="image/*" 
+                                  onChange={handleImageFileChange} 
+                                  className="hidden" 
+                                />
+                              </label>
+                              <div className="text-[11px] text-slate-500">أو يمكنك وضع رابط مباشر للصورة أدناه:</div>
+                              <input
+                                type="url"
+                                value={editImage}
+                                onChange={(e) => setEditImage(e.target.value)}
+                                placeholder="https://..."
+                                className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="text-xs text-slate-300 block mb-1">اسم الملعب:</label>
@@ -1429,9 +1489,9 @@ export default function Home() {
 
                       <button
                         type="submit"
-                        className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-3 rounded-xl text-xs transition-all"
+                        className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-3 rounded-xl text-xs transition-all shadow-lg"
                       >
-                        حفظ وتحديث النظام
+                        حفظ التعديلات وتحديث صورة الملعب
                       </button>
                     </form>
                   )}
