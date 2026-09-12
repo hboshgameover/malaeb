@@ -138,7 +138,7 @@ export default function Home() {
 
   // أرقام المنظومة المعتمدة
   const OFFICIAL_PAYMENT_PHONE = "07712227779";
-  const SUPPORT_WHATSAPP = "9647700000000"; // رقم الدعم الفني المنفصل (يمكنك تغييره هنا بأي وقت)
+  const SUPPORT_WHATSAPP = "9647712227779";
 
   const [currentUser, setCurrentUser] = useState<{
     role: 'guest' | 'player' | 'owner' | 'admin';
@@ -162,6 +162,7 @@ export default function Home() {
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPass, setShowLoginPass] = useState(false);
 
+  // بيانات التسجيل
   const [regName, setRegName] = useState('');
   const [regPitchName, setRegPitchName] = useState('');
   const [regProvince, setRegProvince] = useState('بغداد');
@@ -170,16 +171,17 @@ export default function Home() {
   const [regPassword, setRegPassword] = useState('');
   const [showRegPass, setShowRegPass] = useState(false);
 
-  // استرجاع الرمز
+  // خطوات SMS للاعب
+  const [playerRegStep, setPlayerRegStep] = useState<1 | 2>(1);
+  const [playerEnteredOtp, setPlayerEnteredOtp] = useState('');
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+
+  // استرجاع كلمة المرور
   const [forgotPhone, setForgotPhone] = useState('');
   const [forgotNewPassword, setForgotNewPassword] = useState('');
   const [forgotStep, setForgotStep] = useState<1 | 2>(1);
   const [forgotOtp, setForgotOtp] = useState('');
   const [showResetPass, setShowResetPass] = useState(false);
-
-  const [playerRegStep, setPlayerRegStep] = useState<1 | 2>(1);
-  const [playerEnteredOtp, setPlayerEnteredOtp] = useState('');
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
 
   // دخول Google لصاحب الملعب
   const [showGoogleOwnerSetup, setShowGoogleOwnerSetup] = useState(false);
@@ -242,14 +244,12 @@ export default function Home() {
       if (savedUser) setCurrentUser(JSON.parse(savedUser));
     } catch {}
 
-    // الاستماع الحي لقائمة الملاعب من Firestore
     const unsubPitches = onSnapshot(collection(db, 'pitches'), (snapshot) => {
       if (!snapshot.empty) {
         const loaded: Pitch[] = [];
         snapshot.forEach((doc) => loaded.push(doc.data() as Pitch));
         setPitchesList(loaded);
       } else {
-        // تهيئة ملعب افتراضي في السحابة إذا كانت فارغة
         const defaultP: Pitch = {
           id: 'pitch-legend-1',
           name: 'ملعب الأساطير الدولي',
@@ -273,14 +273,12 @@ export default function Home() {
       }
     });
 
-    // الاستماع لحسابات اللاعبين
     const unsubPlayers = onSnapshot(collection(db, 'players'), (snapshot) => {
       const pList: PlayerAccount[] = [];
       snapshot.forEach(doc => pList.push(doc.data() as PlayerAccount));
       setPlayersList(pList);
     });
 
-    // الاستماع للحجوزات الحية
     const unsubBookings = onSnapshot(collection(db, 'bookings'), (snapshot) => {
       const slotsMap: Record<string, Record<string, Slot[]>> = {};
       snapshot.forEach((doc) => {
@@ -393,7 +391,7 @@ export default function Home() {
     `مرحباً الدعم الفني لمنصة لعبتنا ⚽\nأحتاج إلى مساعدة واستفسار بخصوص المنظومة.`
   )}`;
 
-  // رفع صورة الملعب
+  // رفع صورة الملعب من الاستوديو
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -409,7 +407,7 @@ export default function Home() {
     }
   };
 
-  // تفعيل التمديد الطارئ في Firestore
+  // تفعيل التمديد الطارئ في Firestore لمرة واحدة فقط
   const handleActivateEmergencyExtension = async () => {
     if (!currentOwnerPitch) return;
     try {
@@ -423,7 +421,7 @@ export default function Home() {
     }
   };
 
-  // تسجيل Google
+  // تسجيل الدخول السريع عبر Google
   const handleGoogleSignIn = async () => {
     setAuthError('');
     setAuthLoading(true);
@@ -444,6 +442,7 @@ export default function Home() {
             pitchId: existingPitch.id
           });
         } else {
+          // صاحب ملعب جديد عبر Google: يحدد بيانات ملعبه بدون أي SMS
           setGoogleUserTemp({ name: userName, email: userEmail, photoURL: user.photoURL || undefined });
           setGPitchName('');
           setGProvince('بغداد');
@@ -452,6 +451,7 @@ export default function Home() {
           setShowGoogleOwnerSetup(true);
         }
       } else {
+        // اللاعب يدخل مباشرة وفوراً بضغطة زر
         setCurrentUser({ role: 'player', name: userName, email: userEmail });
       }
     } catch (err: any) {
@@ -461,7 +461,7 @@ export default function Home() {
     }
   };
 
-  // حفظ بروفايل صاحب الملعب Google في Firestore
+  // حفظ بروفايل صاحب الملعب عبر Google
   const handleSaveGoogleOwnerProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (gOwnerPhone.length !== 11 || !gOwnerPhone.startsWith('07')) {
@@ -509,6 +509,7 @@ export default function Home() {
     }
   };
 
+  // تسجيل الدخول مع فحص وجود الحساب ومطابقة كلمة المرور
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -547,50 +548,86 @@ export default function Home() {
     }
   };
 
-  // استرجاع كلمة المرور وتحديثها في Firestore
-  const handleSendForgotOtp = async (e: React.FormEvent) => {
+  // إرسال كود التحقق SMS للاعب مع فحص التكرار
+  const handleSendPlayerSmsOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
 
-    if (forgotPhone.length !== 11 || !forgotPhone.startsWith('07')) {
-      setAuthError('يرجى إدخال رقم هاتف عراقي صحيح يبدأ بـ 07');
+    if (regPhone.length !== 11 || !regPhone.startsWith('07')) {
+      setAuthError('يرجى إدخال رقم هاتف عراقي يبدأ بـ 07 ومكون من 11 رقماً');
       return;
     }
-    if (!forgotNewPassword || forgotNewPassword.length < 3) {
-      setAuthError('كلمة المرور الجديدة يجب ألا تقل عن 3 خانات');
-      return;
-    }
-
-    const exists = activePortal === 'player'
-      ? playersList.some(p => p.phone === forgotPhone)
-      : pitchesList.some(p => p.ownerPhone === forgotPhone);
-
-    if (!exists) {
-      setAuthError('هذا الرقم غير مسجل لدينا في المنظومة.');
+    if (!regPassword || regPassword.length < 3) {
+      setAuthError('كلمة المرور يجب ألا تقل عن 3 خانات');
       return;
     }
 
-    // تحديث كلمة المرور في Firestore مباشرة وبأمان
+    const alreadyPlayer = playersList.some(p => p.phone === regPhone);
+    if (alreadyPlayer) {
+      setAuthError('هذا الرقم مسجل كلاعب لدينا بالفعل! يرجى تسجيل الدخول مباشرة.');
+      return;
+    }
+
+    setAuthLoading(true);
+
     try {
-      if (activePortal === 'player') {
-        await setDoc(doc(db, 'players', forgotPhone), { password: forgotNewPassword }, { merge: true });
-        const p = playersList.find(x => x.phone === forgotPhone);
-        setCurrentUser({ role: 'player', name: p?.name || 'كابتن', phone: forgotPhone });
-      } else {
-        const found = pitchesList.find(x => x.ownerPhone === forgotPhone);
-        if (found) {
-          await updateDoc(doc(db, 'pitches', found.id), { ownerPassword: forgotNewPassword });
-          setCurrentUser({ role: 'owner', name: found.ownerName, phone: forgotPhone, pitchId: found.id });
-        }
+      if ((window as any).recaptchaVerifier) {
+        try { (window as any).recaptchaVerifier.clear(); } catch {}
       }
-      setAuthMode('login');
-      alert('تم تحديث كلمة المرور بنجاح وتسجيل دخولك مباشرة!');
-    } catch (e: any) {
-      setAuthError('حدث خطأ أثناء التحديث: ' + e.message);
+
+      (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible'
+      });
+
+      const formattedPhone = '+964' + regPhone.replace(/^0/, '');
+      const appVerifier = (window as any).recaptchaVerifier;
+      const conf = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
+      setConfirmationResult(conf);
+      setPlayerRegStep(2);
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/billing-not-enabled' || err.code === 'auth/quota-exceeded') {
+        // حماية عند قيود Firebase Spark المجانية: تسجيل اللاعب وحفظه مباشرة في السحابة
+        const newPlayer: PlayerAccount = {
+          name: regName || 'كابتن الفريق',
+          phone: regPhone,
+          password: regPassword
+        };
+        await setDoc(doc(db, 'players', regPhone), newPlayer);
+        setCurrentUser({ role: 'player', name: newPlayer.name, phone: newPlayer.phone });
+      } else {
+        setAuthError('فشل إرسال كود التحقق (' + (err.code || err.message) + ')');
+      }
+    } finally {
+      setAuthLoading(false);
     }
   };
 
-  // إنشاء حساب صاحب ملعب جديد وحفظه في Firestore
+  // تأكيد كود التحقق SMS للاعب وحفظه في Firestore
+  const handleVerifyPlayerSmsOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmationResult || !playerEnteredOtp) return;
+
+    setAuthError('');
+    setAuthLoading(true);
+
+    try {
+      await confirmationResult.confirm(playerEnteredOtp);
+      const newPlayer: PlayerAccount = {
+        name: regName || 'كابتن الفريق',
+        phone: regPhone,
+        password: regPassword
+      };
+      await setDoc(doc(db, 'players', regPhone), newPlayer);
+      setCurrentUser({ role: 'player', name: newPlayer.name, phone: newPlayer.phone });
+    } catch (err: any) {
+      setAuthError('رمز التحقق غير صحيح أو منتهي الصلاحية');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // تسجيل صاحب الملعب المباشر بدون SMS
   const handleOwnerDirectRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -637,41 +674,60 @@ export default function Home() {
     }
   };
 
-  // إنشاء حساب لاعب مع الحفظ في Firestore
-  const handlePlayerRegister = async (e: React.FormEvent) => {
+  // استرجاع كلمة المرور وتحديثها في Firestore
+  const handleSendForgotOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
 
-    if (regPhone.length !== 11 || !regPhone.startsWith('07')) {
-      setAuthError('يرجى إدخال رقم هاتف عراقي يبدأ بـ 07 ومكون من 11 رقماً');
+    if (forgotPhone.length !== 11 || !forgotPhone.startsWith('07')) {
+      setAuthError('يرجى إدخال رقم هاتف عراقي صحيح يبدأ بـ 07');
       return;
     }
-    if (!regPassword || regPassword.length < 3) {
-      setAuthError('كلمة المرور يجب ألا تقل عن 3 خانات');
-      return;
-    }
-
-    const alreadyPlayer = playersList.some(p => p.phone === regPhone);
-    if (alreadyPlayer) {
-      setAuthError('هذا الرقم مسجل كلاعب مسبقاً! يرجى تسجيل الدخول مباشرة.');
+    if (!forgotNewPassword || forgotNewPassword.length < 3) {
+      setAuthError('كلمة المرور الجديدة يجب ألا تقل عن 3 خانات');
       return;
     }
 
-    const newPlayer: PlayerAccount = {
-      name: regName || 'كابتن الفريق',
-      phone: regPhone,
-      password: regPassword
-    };
+    const exists = activePortal === 'player'
+      ? playersList.some(p => p.phone === forgotPhone)
+      : pitchesList.some(p => p.ownerPhone === forgotPhone);
+
+    if (!exists) {
+      setAuthError('هذا الرقم غير مسجل لدينا في المنظومة لتعديل رمزه.');
+      return;
+    }
 
     try {
-      await setDoc(doc(db, 'players', regPhone), newPlayer);
-      setCurrentUser({ role: 'player', name: newPlayer.name, phone: newPlayer.phone });
-    } catch (err: any) {
-      setAuthError('تعذر إنشاء الحساب: ' + err.message);
+      if (activePortal === 'player') {
+        await setDoc(doc(db, 'players', forgotPhone), { password: forgotNewPassword }, { merge: true });
+        const p = playersList.find(x => x.phone === forgotPhone);
+        setCurrentUser({ role: 'player', name: p?.name || 'كابتن', phone: forgotPhone });
+      } else {
+        const found = pitchesList.find(x => x.ownerPhone === forgotPhone);
+        if (found) {
+          await updateDoc(doc(db, 'pitches', found.id), { ownerPassword: forgotNewPassword });
+          setCurrentUser({ role: 'owner', name: found.ownerName, phone: forgotPhone, pitchId: found.id });
+        }
+      }
+      setAuthMode('login');
+      alert('تم تحديث كلمة المرور بنجاح وتسجيل دخولك مباشرة!');
+    } catch (e: any) {
+      setAuthError('حدث خطأ أثناء التحديث: ' + e.message);
     }
   };
 
-  // تأكيد حجز اللاعب ومزامنته سحابياً مع الجميع
+  // تعديل اسم اللاعب في السحابة
+  const handleSaveNewPlayerName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tempPlayerName.trim()) return;
+    if (currentUser.phone) {
+      await setDoc(doc(db, 'players', currentUser.phone), { name: tempPlayerName.trim() }, { merge: true });
+    }
+    setCurrentUser(prev => ({ ...prev, name: tempPlayerName.trim() }));
+    setShowEditPlayerModal(false);
+  };
+
+  // تأكيد حجز اللاعب ومزامنته سحابياً
   const handleConfirmPlayerBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSlot || !bookingCaptainName || bookingCaptainPhone.length !== 11 || !selectedPitchId) return;
@@ -740,7 +796,7 @@ export default function Home() {
     }
   };
 
-  // حفظ تعديلات بروفايل وساعات الملعب في السحابة
+  // حفظ تعديلات بروفايل وساعات وصورة الملعب في السحابة
   const saveFullSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentOwnerPitch) return;
@@ -761,6 +817,7 @@ export default function Home() {
     }
   };
 
+  // تسجيل دخول الإدارة المركزية
   const handleAdminLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setAdminError('');
@@ -783,7 +840,6 @@ export default function Home() {
 
   if (!isClient) return null;
 
-  // الملاعب المفلترة حسب المحافظة المختارة
   const displayedPitches = pitchesList.filter(p => {
     const isActive = p.subscriptionStatus === 'active';
     const matchesProvince = selectedProvinceFilter === 'الكل' || p.city === selectedProvinceFilter;
@@ -821,7 +877,20 @@ export default function Home() {
           {currentUser.role !== 'guest' && (
             <div className="flex items-center gap-3">
               <div className="text-left">
-                <span className="text-xs font-bold text-white block">{currentUser.name}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-white block">{currentUser.name}</span>
+                  {currentUser.role === 'player' && (
+                    <button
+                      onClick={() => {
+                        setTempPlayerName(currentUser.name || '');
+                        setShowEditPlayerModal(true);
+                      }}
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-400 px-2 py-0.5 rounded-lg border border-slate-700"
+                    >
+                      تعديل الاسم ✏️
+                    </button>
+                  )}
+                </div>
                 <span className="text-[10px] text-emerald-400 block font-mono">
                   {currentUser.role === 'player' ? `حساب كابتن (${currentUser.phone || 'Google'})` : currentUser.role === 'owner' ? `لوحة الملعب (${currentUser.phone})` : 'الإدارة العامة'}
                 </span>
@@ -839,7 +908,6 @@ export default function Home() {
 
         <main className="max-w-5xl mx-auto mt-6">
 
-          {/* واجهة الدخول للمنظومة */}
           {currentUser.role === 'guest' && (
             <div className="py-8 md:py-14 max-w-md mx-auto space-y-6">
               <div className="text-center space-y-2">
@@ -874,6 +942,7 @@ export default function Home() {
                   onClick={() => {
                     setActivePortal('player');
                     setAuthMode('login');
+                    setPlayerRegStep(1);
                     setAuthError('');
                   }}
                   className={`py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
@@ -897,6 +966,7 @@ export default function Home() {
                 </button>
               </div>
 
+              {/* تسجيل الدخول */}
               {authMode === 'login' && (
                 <form onSubmit={handleLogin} className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
@@ -977,6 +1047,7 @@ export default function Home() {
                       type="button"
                       onClick={() => {
                         setAuthMode('register');
+                        setPlayerRegStep(1);
                         setAuthError('');
                       }}
                       className="text-emerald-400 font-bold hover:underline"
@@ -1056,22 +1127,29 @@ export default function Home() {
                 </form>
               )}
 
-              {/* إنشاء حساب جديد */}
+              {/* إنشاء حساب جديد: صاحب الملعب مباشر وبدون SMS | اللاعب مع تحقق SMS */}
               {authMode === 'register' && (
                 <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
                     <h3 className="font-bold text-sm text-white">
-                      إنشاء حساب جديد ({activePortal === 'owner' ? 'صاحب ملعب' : 'لاعب'})
+                      {activePortal === 'owner' 
+                        ? 'إنشاء حساب صاحب ملعب (مباشر)' 
+                        : (playerRegStep === 1 ? 'إنشاء حساب لاعب (مع تحقق SMS)' : 'تأكيد رمز الـ SMS للاعب')}
                     </h3>
                     <button
                       type="button"
-                      onClick={() => setAuthMode('login')}
+                      onClick={() => {
+                        setAuthMode('login');
+                        setPlayerRegStep(1);
+                        setAuthError('');
+                      }}
                       className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1"
                     >
                       <ArrowRight className="w-3.5 h-3.5" /> العودة للدخول
                     </button>
                   </div>
 
+                  {/* نموذج صاحب الملعب (مباشر بدون SMS) */}
                   {activePortal === 'owner' ? (
                     <form onSubmit={handleOwnerDirectRegister} className="space-y-3">
                       <div>
@@ -1172,73 +1250,117 @@ export default function Home() {
                       </button>
                     </form>
                   ) : (
-                    <form onSubmit={handlePlayerRegister} className="space-y-3">
-                      <div>
-                        <label className="text-xs text-slate-300 block mb-1">اسم الكابتن أو الفريق</label>
-                        <input
-                          type="text"
-                          required
-                          value={regName}
-                          onChange={(e) => setRegName(e.target.value)}
-                          placeholder="مثال: كابتن ليث"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:border-emerald-500 outline-none"
-                        />
-                      </div>
+                    /* نموذج اللاعب مع التحقق الرسمي بخطوتين SMS */
+                    <>
+                      {playerRegStep === 1 ? (
+                        <form onSubmit={handleSendPlayerSmsOtp} className="space-y-4">
+                          <div>
+                            <label className="text-xs text-slate-300 block mb-1">اسم الكابتن أو الفريق</label>
+                            <input
+                              type="text"
+                              required
+                              value={regName}
+                              onChange={(e) => setRegName(e.target.value)}
+                              placeholder="مثال: كابتن ليث"
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
 
-                      <div>
-                        <label className="text-xs text-slate-300 block mb-1">رقم الهاتف العراقي</label>
-                        <input
-                          type="tel"
-                          required
-                          maxLength={11}
-                          value={regPhone}
-                          onChange={(e) => setRegPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                          placeholder="07XXXXXXXXX"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:border-emerald-500 outline-none"
-                        />
-                      </div>
+                          <div>
+                            <label className="text-xs text-slate-300 block mb-1">رقم الهاتف العراقي (يصلك عليه كود SMS)</label>
+                            <input
+                              type="tel"
+                              required
+                              maxLength={11}
+                              value={regPhone}
+                              onChange={(e) => setRegPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                              placeholder="07XXXXXXXXX"
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
 
-                      <div>
-                        <label className="text-xs text-slate-300 block mb-1">كلمة المرور</label>
-                        <div className="relative">
-                          <input
-                            type={showRegPass ? "text" : "password"}
-                            required
-                            value={regPassword}
-                            onChange={(e) => setRegPassword(e.target.value)}
-                            placeholder="اختر كلمة مرور"
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-4 pl-10 py-2.5 text-xs text-white focus:border-emerald-500 outline-none"
-                          />
+                          <div>
+                            <label className="text-xs text-slate-300 block mb-1">كلمة المرور</label>
+                            <div className="relative">
+                              <input
+                                type={showRegPass ? "text" : "password"}
+                                required
+                                value={regPassword}
+                                onChange={(e) => setRegPassword(e.target.value)}
+                                placeholder="اختر كلمة مرور"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-4 pl-10 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowRegPass(!showRegPass)}
+                                className="absolute left-3 top-2.5 text-slate-500 hover:text-slate-300"
+                              >
+                                {showRegPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {authError && (
+                            <p className="text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
+                              {authError}
+                            </p>
+                          )}
+
+                          <button
+                            type="submit"
+                            disabled={authLoading}
+                            className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                            {authLoading ? 'جارٍ إرسال كود التحقق...' : 'إرسال كود التحقق الرسمي SMS'}
+                          </button>
+                        </form>
+                      ) : (
+                        <form onSubmit={handleVerifyPlayerSmsOtp} className="space-y-4">
+                          <div className="p-3 bg-emerald-950 border border-emerald-800 rounded-xl text-xs text-emerald-300">
+                            تم إرسال كود التحقق SMS إلى رقمك ({regPhone}). اكتب الرمز لتأكيد الحساب:
+                          </div>
+
+                          <div>
+                            <label className="text-xs text-slate-300 block mb-1">رمز التحقق (6 أرقام)</label>
+                            <input
+                              type="text"
+                              required
+                              maxLength={6}
+                              value={playerEnteredOtp}
+                              onChange={(e) => setPlayerEnteredOtp(e.target.value.replace(/[^0-9]/g, ''))}
+                              placeholder="123456"
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl text-center py-2.5 text-lg font-mono text-white tracking-widest focus:border-emerald-500"
+                            />
+                          </div>
+
+                          {authError && <p className="text-xs text-rose-400">{authError}</p>}
+
+                          <button
+                            type="submit"
+                            disabled={authLoading}
+                            className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+                          >
+                            {authLoading ? 'جارٍ التأكيد...' : 'تأكيد الرمز والدخول إلى حسابي'}
+                          </button>
+
                           <button
                             type="button"
-                            onClick={() => setShowRegPass(!showRegPass)}
-                            className="absolute left-3 top-2.5 text-slate-500 hover:text-slate-300"
+                            onClick={() => setPlayerRegStep(1)}
+                            className="w-full text-center text-xs text-slate-400 hover:underline pt-2 block"
                           >
-                            {showRegPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            تعديل رقم الهاتف
                           </button>
-                        </div>
-                      </div>
-
-                      {authError && (
-                        <p className="text-xs text-rose-400 bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
-                          {authError}
-                        </p>
+                        </form>
                       )}
-
-                      <button
-                        type="submit"
-                        className="w-full py-3 rounded-xl text-xs font-black transition-all shadow-lg bg-emerald-600 hover:bg-emerald-500 text-white"
-                      >
-                        تثبيت الحساب والدخول
-                      </button>
-                    </form>
+                    </>
                   )}
                 </div>
               )}
             </div>
           )}
 
-          {/* إكمال بروفايل Google لصاحب الملعب مع المحافظة */}
+          {/* إكمال بروفايل Google لصاحب الملعب مع المحافظة (بدون SMS) */}
           {showGoogleOwnerSetup && googleUserTemp && (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
               <div className="bg-slate-900 border border-amber-500/60 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-right relative">
@@ -1319,6 +1441,48 @@ export default function Home() {
             </div>
           )}
 
+          {/* نافذة تعديل اسم اللاعب */}
+          {showEditPlayerModal && (
+            <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
+              <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 space-y-4 text-right">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                  <h4 className="font-bold text-white text-sm">تعديل اسم اللاعب / الفريق</h4>
+                  <button onClick={() => setShowEditPlayerModal(false)} className="text-slate-400 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <form onSubmit={handleSaveNewPlayerName} className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-300 block mb-1">الاسم الجديد:</label>
+                    <input
+                      type="text"
+                      required
+                      value={tempPlayerName}
+                      onChange={(e) => setTempPlayerName(e.target.value)}
+                      placeholder="اكتب اسمك الجديد"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <button
+                      type="submit"
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-xl text-xs"
+                    >
+                      حفظ التغيير
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowEditPlayerModal(false)}
+                      className="bg-slate-800 text-slate-300 font-bold py-2 rounded-xl text-xs"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {/* 1. واجهة صاحب الملعب */}
           {currentUser.role === 'owner' && currentOwnerPitch && (
             <div>
@@ -1364,6 +1528,7 @@ export default function Home() {
                       إرسال سكرين شوت التحويل عبر واتساب ({OFFICIAL_PAYMENT_PHONE})
                     </a>
 
+                    {/* زر التمديد الطارئ: يظهر حصراً لمن كان مشتركاً سابقاً وانتهى اشتراكه */}
                     {currentOwnerPitch.lastRenewDate !== '-' ? (
                       !currentOwnerPitch.usedEmergencyExtension ? (
                         <button
@@ -1536,7 +1701,7 @@ export default function Home() {
                     <form onSubmit={saveFullSettings} className="space-y-6 max-w-3xl">
                       {profileSavedToast && (
                         <div className="p-3 bg-emerald-950 border border-emerald-600 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات سحابياً في Firestore بنجاح!
+                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات وصورة الملعب في السحابة بنجاح!
                         </div>
                       )}
 
@@ -1647,7 +1812,6 @@ export default function Home() {
                     <h2 className="text-2xl font-black text-white">الملاعب الرياضية المتاحة</h2>
                     <p className="text-xs text-slate-400">اختر محافظتك وتصفح الملاعب المجهزة بالكامل</p>
 
-                    {/* أشرطة فلترة المحافظات العراقية */}
                     <div className="flex items-center justify-center gap-1.5 flex-wrap pt-3">
                       <button
                         onClick={() => setSelectedProvinceFilter('الكل')}
@@ -2030,7 +2194,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* نافذة دخول الإدارة المركزية */}
+      {/* نافذة دخول الإدارة المركزية النظيفة */}
       {showAdminModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-blue-900/80 w-full max-w-xs rounded-3xl p-6 space-y-4 text-center">
