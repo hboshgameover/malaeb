@@ -27,8 +27,7 @@ import {
   X,
   Zap,
   MessageSquare,
-  Upload,
-  Image as ImageIcon
+  Upload
 } from 'lucide-react';
 import { auth, googleProvider } from '@/lib/firebase';
 import { 
@@ -47,6 +46,12 @@ interface Slot {
   bookedBy?: string;
   phone?: string;
   price: number;
+}
+
+interface PlayerAccount {
+  name: string;
+  phone: string;
+  password?: string;
 }
 
 interface Pitch {
@@ -127,6 +132,9 @@ export default function Home() {
     pitchId?: string;
   }>({ role: 'guest' });
 
+  // قاعدة بيانات اللاعبين المسجلين
+  const [playersList, setPlayersList] = useState<PlayerAccount[]>([]);
+
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [showRegPass, setShowRegPass] = useState(false);
@@ -204,6 +212,9 @@ export default function Home() {
       const savedPitches = localStorage.getItem('la3batna_pitches');
       if (savedPitches) setPitchesList(JSON.parse(savedPitches));
 
+      const savedPlayers = localStorage.getItem('la3batna_players');
+      if (savedPlayers) setPlayersList(JSON.parse(savedPlayers));
+
       const savedSlots = localStorage.getItem('la3batna_slots');
       if (savedSlots) setPitchSlots(JSON.parse(savedSlots));
 
@@ -215,6 +226,10 @@ export default function Home() {
   useEffect(() => {
     if (isClient) localStorage.setItem('la3batna_pitches', JSON.stringify(pitchesList));
   }, [pitchesList, isClient]);
+
+  useEffect(() => {
+    if (isClient) localStorage.setItem('la3batna_players', JSON.stringify(playersList));
+  }, [playersList, isClient]);
 
   useEffect(() => {
     if (isClient) localStorage.setItem('la3batna_slots', JSON.stringify(pitchSlots));
@@ -290,7 +305,6 @@ export default function Home() {
     `مرحباً إدارة لعبتنا ⚽\nأنا صاحب ملعب (${currentOwnerPitch?.name || 'الملعب'}). حولت مبلغ الاشتراك على رقم زين كاش المعتمد (${officialAdminPhone}).\nمرفق لكم سكرين شوت التحويل 📸👇`
   )}`;
 
-  // رفع صورة الملعب من الاستوديو/الملفات
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -306,7 +320,6 @@ export default function Home() {
     }
   };
 
-  // تفعيل التمديد الطارئ لمرة واحدة فقط للمشتركين السابقين
   const handleActivateEmergencyExtension = () => {
     if (!currentOwnerPitch) return;
     setPitchesList(prev => prev.map(p => p.id === currentOwnerPitch.id ? {
@@ -317,7 +330,7 @@ export default function Home() {
     } : p));
   };
 
-  // الدخول بـ Google
+  // تسجيل الدخول عبر Google
   const handleGoogleSignIn = async () => {
     setAuthError('');
     setAuthLoading(true);
@@ -345,6 +358,7 @@ export default function Home() {
           setShowGoogleOwnerSetup(true);
         }
       } else {
+        // اللاعب يدخل مباشرة بضغطة زر
         setCurrentUser({ role: 'player', name: userName, email: userEmail });
       }
     } catch (err: any) {
@@ -406,8 +420,11 @@ export default function Home() {
     setCurrentUser({ role: 'guest' });
   };
 
+  // سياسة تسجيل الدخول الصارمة (فحص وجود الحساب ومطابقة كلمة المرور)
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError('');
+
     if (loginPhone.length !== 11 || !loginPhone.startsWith('07')) {
       setAuthError('يرجى كتابة رقم هاتف عراقي صحيح (11 رقماً يبدأ بـ 07)');
       return;
@@ -420,7 +437,7 @@ export default function Home() {
     if (activePortal === 'owner') {
       const foundPitch = pitchesList.find(p => p.ownerPhone === loginPhone);
       if (!foundPitch) {
-        setAuthError('هذا الرقم غير مسجل كصاحب ملعب. أنشئ حسابك أولاً!');
+        setAuthError('هذا الرقم غير مسجل كصاحب ملعب لدينا. يرجى الضغط على "إنشاء حساب جديد" أولاً!');
         return;
       }
       if (foundPitch.ownerPassword && foundPitch.ownerPassword !== loginPassword) {
@@ -429,13 +446,25 @@ export default function Home() {
       }
       setCurrentUser({ role: 'owner', name: foundPitch.ownerName, phone: loginPhone, pitchId: foundPitch.id });
     } else {
-      setCurrentUser({ role: 'player', name: 'كابتن الفريق', phone: loginPhone });
+      // فحص وجود حساب اللاعب
+      const foundPlayer = playersList.find(p => p.phone === loginPhone);
+      if (!foundPlayer) {
+        setAuthError('هذا الرقم غير مسجل كلاعب في المنظومة. يرجى الضغط على "إنشاء حساب جديد" أولاً!');
+        return;
+      }
+      if (foundPlayer.password && foundPlayer.password !== loginPassword) {
+        setAuthError('كلمة المرور غير صحيحة');
+        return;
+      }
+      setCurrentUser({ role: 'player', name: foundPlayer.name, phone: foundPlayer.phone });
     }
-    setAuthError('');
   };
 
+  // إرسال كود SMS للاعب مع فحص عدم تكرار الرقم
   const handleSendPlayerSmsOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError('');
+
     if (regPhone.length !== 11 || !regPhone.startsWith('07')) {
       setAuthError('يرجى إدخال رقم هاتف عراقي يبدأ بـ 07 ومكون من 11 رقماً');
       return;
@@ -445,15 +474,24 @@ export default function Home() {
       return;
     }
 
-    setAuthError('');
+    // سياسة منع إنشاء حساب إذا كان مسجلاً بالفعل
+    const alreadyPlayer = playersList.find(p => p.phone === regPhone);
+    const alreadyOwner = pitchesList.find(p => p.ownerPhone === regPhone);
+    if (alreadyPlayer || alreadyOwner) {
+      setAuthError('هذا الرقم مسجل لدينا بالفعل! يرجى الضغط على "العودة للدخول" لتسجيل الدخول مباشرة.');
+      return;
+    }
+
     setAuthLoading(true);
 
     try {
-      if (!(window as any).recaptchaVerifier) {
-        (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-          size: 'invisible'
-        });
+      if ((window as any).recaptchaVerifier) {
+        try { (window as any).recaptchaVerifier.clear(); } catch {}
       }
+
+      (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible'
+      });
 
       const formattedPhone = '+964' + regPhone.replace(/^0/, '');
       const appVerifier = (window as any).recaptchaVerifier;
@@ -461,12 +499,14 @@ export default function Home() {
       setConfirmationResult(conf);
       setPlayerRegStep(2);
     } catch (err: any) {
-      setAuthError('فشل إرسال كود التحقق: تأكد من صحة الرقم وحفظ إعدادات Firebase');
+      console.error(err);
+      setAuthError('فشل الإرسال (' + (err.code || err.message) + '). إذا كنت تستخدم متصفح Brave، عطّل الـ Shields مؤقتاً.');
     } finally {
       setAuthLoading(false);
     }
   };
 
+  // تأكيد كود SMS وحفظ اللاعب في قاعدة البيانات
   const handleVerifyPlayerSmsOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!confirmationResult || !playerEnteredOtp) return;
@@ -476,7 +516,13 @@ export default function Home() {
 
     try {
       await confirmationResult.confirm(playerEnteredOtp);
-      setCurrentUser({ role: 'player', name: regName || 'كابتن الفريق', phone: regPhone });
+      const newPlayer: PlayerAccount = {
+        name: regName || 'كابتن الفريق',
+        phone: regPhone,
+        password: regPassword
+      };
+      setPlayersList(prev => [...prev, newPlayer]);
+      setCurrentUser({ role: 'player', name: newPlayer.name, phone: newPlayer.phone });
     } catch (err: any) {
       setAuthError('رمز التحقق غير صحيح أو منتهي الصلاحية');
     } finally {
@@ -484,14 +530,24 @@ export default function Home() {
     }
   };
 
+  // إنشاء حساب صاحب الملعب المباشر مع فحص عدم تكرار الرقم
   const handleOwnerDirectRegister = (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError('');
+
     if (regPhone.length !== 11 || !regPhone.startsWith('07')) {
       setAuthError('يرجى كتابة رقم هاتف عراقي صحيح يبدأ بـ 07');
       return;
     }
     if (!regPassword || regPassword.length < 3) {
       setAuthError('كلمة المرور يجب ألا تقل عن 3 خانات');
+      return;
+    }
+
+    // فحص إذا كان الرقم مسجلاً مسبقاً
+    const alreadyOwner = pitchesList.find(p => p.ownerPhone === regPhone);
+    if (alreadyOwner) {
+      setAuthError('هذا الرقم مسجل كصاحب ملعب مسبقاً! يرجى الانتقال إلى تسجيل الدخول.');
       return;
     }
 
@@ -515,13 +571,13 @@ export default function Home() {
     };
     setPitchesList(prev => [...prev, newPitch]);
     setCurrentUser({ role: 'owner', name: regName, phone: regPhone, pitchId: newId });
-    setAuthError('');
   };
 
   const handleSaveNewPlayerName = (e: React.FormEvent) => {
     e.preventDefault();
     if (!tempPlayerName.trim()) return;
     setCurrentUser(prev => ({ ...prev, name: tempPlayerName.trim() }));
+    setPlayersList(prev => prev.map(p => p.phone === currentUser.phone ? { ...p, name: tempPlayerName.trim() } : p));
     setShowEditPlayerModal(false);
   };
 
@@ -686,7 +742,7 @@ export default function Home() {
                   )}
                 </div>
                 <span className="text-[10px] text-emerald-400 block font-mono">
-                  {currentUser.role === 'player' ? 'حساب كابتن' : currentUser.role === 'owner' ? `لوحة الملعب (${currentUser.phone})` : 'الإدارة العامة'}
+                  {currentUser.role === 'player' ? `حساب كابتن (${currentUser.phone || 'Google'})` : currentUser.role === 'owner' ? `لوحة الملعب (${currentUser.phone})` : 'الإدارة العامة'}
                 </span>
               </div>
               <button
@@ -709,6 +765,7 @@ export default function Home() {
                 <p className="text-xs text-slate-400">سجل الدخول لحجز ملعبك أو إدارة حجوزاتك</p>
               </div>
 
+              {/* زر Google */}
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
@@ -726,7 +783,7 @@ export default function Home() {
 
               <div className="flex items-center gap-3 text-xs text-slate-600">
                 <div className="flex-1 h-px bg-slate-800"></div>
-                <span>أو تسجيل الدخول اليدوي</span>
+                <span>أو تسجيل الدخول برقم الهاتف</span>
                 <div className="flex-1 h-px bg-slate-800"></div>
               </div>
 
@@ -760,6 +817,7 @@ export default function Home() {
                 </button>
               </div>
 
+              {/* تسجيل الدخول */}
               {authMode === 'login' && (
                 <form onSubmit={handleLogin} className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
@@ -807,8 +865,8 @@ export default function Home() {
                   </div>
 
                   {authError && (
-                    <p className="text-xs text-rose-400 flex items-center gap-1 font-medium">
-                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" /> {authError}
+                    <p className="text-xs text-rose-400 flex items-center gap-1 font-medium bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {authError}
                     </p>
                   )}
 
@@ -838,6 +896,7 @@ export default function Home() {
                 </form>
               )}
 
+              {/* إنشاء حساب جديد */}
               {authMode === 'register' && (
                 <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
@@ -931,7 +990,11 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {authError && <p className="text-xs text-rose-400">{authError}</p>}
+                      {authError && (
+                        <p className="text-xs text-rose-400 flex items-center gap-1 font-medium bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
+                          <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {authError}
+                        </p>
+                      )}
 
                       <button
                         type="submit"
@@ -992,7 +1055,11 @@ export default function Home() {
                             </div>
                           </div>
 
-                          {authError && <p className="text-xs text-rose-400">{authError}</p>}
+                          {authError && (
+                            <p className="text-xs text-rose-400 flex items-center gap-1 font-medium bg-rose-950/40 p-2.5 rounded-xl border border-rose-900/60">
+                              <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {authError}
+                            </p>
+                          )}
 
                           <button
                             type="submit"
@@ -1218,7 +1285,6 @@ export default function Home() {
                       إرسال سكرين شوت التحويل عبر واتساب ({officialAdminPhone})
                     </a>
 
-                    {/* يظهر التمديد الطارئ فقط للمشتركين السابقين الذين انتهى اشتراكهم ولم يستخدموه مسبقاً */}
                     {currentOwnerPitch.lastRenewDate !== '-' ? (
                       !currentOwnerPitch.usedEmergencyExtension ? (
                         <button
@@ -1398,7 +1464,6 @@ export default function Home() {
                       <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-5">
                         <h4 className="font-bold text-white text-base">بيانات الملعب وصورته</h4>
 
-                        {/* قسم رفع صورة الملعب ومعاينتها */}
                         <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
                           <label className="text-xs text-slate-300 block font-bold">صورة واجهة الملعب:</label>
                           <div className="flex flex-col sm:flex-row items-center gap-4">
