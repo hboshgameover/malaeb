@@ -126,29 +126,33 @@ export default function Home() {
 
   const [ownerTab, setOwnerTab] = useState<'bookings' | 'profile'>('bookings');
 
-  const [pitch, setPitch] = useState<Pitch>({
-    id: 'p-1',
-    name: 'ملعب الأساطير الدولي',
-    area: 'المنصور - شارع 14 رمضان',
-    city: 'بغداد',
-    type: 'خماسي ثيل تركي درجة أولى',
-    ownerName: 'كابتن hbosh',
-    ownerPhone: '07800000000',
-    defaultPricePerHour: 20000,
-    rating: 4.9,
-    imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
-    bio: 'أحدث ساحة خماسية في المنصور، ثيل هولندي معتمد، كشافات ليد إضاءة نهارية، كافتيريا وغرف تبديل مع دوش حار وبارد، بارك سيارات مخصص ومراقب.',
-    features: ['ثيل عالي الجودة', 'إنارة ليد دولية', 'كافتيريا وعصائر', 'غرف تبديل وتبريد', 'كراج سيارات'],
-    subscriptionStatus: 'active',
-    subscriptionDaysLeft: 30,
-    lastRenewDate: '2026-09-01',
-    emergencyUsedInCurrentCycle: false
-  });
+  const [pitchesList, setPitchesList] = useState<Pitch[]>([
+    {
+      id: 'p-1',
+      name: 'ملعب الأساطير الدولي',
+      area: 'المنصور - شارع 14 رمضان',
+      city: 'بغداد',
+      type: 'خماسي ثيل تركي درجة أولى',
+      ownerName: 'كابتن hbosh',
+      ownerPhone: '07800000000',
+      defaultPricePerHour: 20000,
+      rating: 4.9,
+      imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
+      bio: 'أحدث ساحة خماسية في المنصور، ثيل هولندي معتمد، كشافات ليد إضاءة نهارية، كافتيريا وغرف تبديل مع دوش حار وبارد، بارك سيارات مخصص ومراقب.',
+      features: ['ثيل عالي الجودة', 'إنارة ليد دولية', 'كافتيريا وعصائر', 'غرف تبديل وتبريد', 'كراج سيارات'],
+      subscriptionStatus: 'active',
+      subscriptionDaysLeft: 30,
+      lastRenewDate: '2026-09-01',
+      emergencyUsedInCurrentCycle: false
+    }
+  ]);
 
-  const [editName, setEditName] = useState(pitch.name);
-  const [editArea, setEditArea] = useState(pitch.area);
-  const [editBio, setEditBio] = useState(pitch.bio);
-  const [editImage, setEditImage] = useState(pitch.imageUrl);
+  const pitch = pitchesList[0] || null;
+
+  const [editName, setEditName] = useState(pitch?.name || '');
+  const [editArea, setEditArea] = useState(pitch?.area || '');
+  const [editBio, setEditBio] = useState(pitch?.bio || '');
+  const [editImage, setEditImage] = useState(pitch?.imageUrl || '');
   const [profileSavedToast, setProfileSavedToast] = useState(false);
 
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
@@ -165,6 +169,8 @@ export default function Home() {
   const [viewDetailsSlot, setViewDetailsSlot] = useState<Slot | null>(null);
   const [slotToConfirmCancel, setSlotToConfirmCancel] = useState<Slot | null>(null);
 
+  const [adminConfirmAction, setAdminConfirmAction] = useState<'renew' | 'expire' | 'delete' | null>(null);
+
   const [selectedHours24, setSelectedHours24] = useState<number[]>([16, 17, 18, 19, 20, 21, 22, 23, 0]);
   const [scheduleTargetDateStr, setScheduleTargetDateStr] = useState('');
   const [schedulePrice, setSchedulePrice] = useState(20000);
@@ -175,10 +181,11 @@ export default function Home() {
   const adminWhatsAppNumber = "9647800000000";
   const zainCashWalletNumber = "0780XXXXXXX";
 
+  // إظهار الشهر بجانب اليوم لكي لا يدوخ اللاعبون
   const dateOptions = useMemo(() => {
     const days = [];
     const arabicDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-    const arabicMonths = ['كانون 2', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 'تموز', 'آب', 'أيلول', 'تشرين 1', 'تشرين 2', 'كانون 1'];
+    const arabicMonths = ['كانون الثاني', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 'تموز', 'آب', 'أيلول', 'تشرين الأول', 'تشرين الثاني', 'كانون الأول'];
 
     for (let i = 0; i < 14; i++) {
       const d = new Date();
@@ -229,7 +236,7 @@ export default function Home() {
   const totalMonthlyRevenue = Object.values(allSlots).flat().filter(s => s.isBooked).reduce((sum, s) => sum + s.price, 0) + (26 * 20000);
 
   const whatsappUrl = `https://wa.me/${adminWhatsAppNumber}?text=${encodeURIComponent(
-    `مرحباً إدارة لعبتنا ⚽\nأنا كابتن (${pitch.name}). حولت مبلغ الاشتراك عبر زين كاش.\nمرفق لكم سكرين شوت التحويل 📸👇`
+    `مرحباً إدارة لعبتنا ⚽\nأنا كابتن (${pitch?.name || 'الملعب'}). حولت مبلغ الاشتراك عبر زين كاش.\nمرفق لكم سكرين شوت التحويل 📸👇`
   )}`;
 
   const handleLogin = (e: React.FormEvent) => {
@@ -246,7 +253,7 @@ export default function Home() {
     setAuthError('');
     setCurrentUser({
       role: activePortal,
-      name: activePortal === 'player' ? 'كابتن الفريق' : pitch.name,
+      name: activePortal === 'player' ? 'كابتن الفريق' : (pitch?.name || 'صاحب الملعب'),
       phone: loginPhone
     });
   };
@@ -264,13 +271,25 @@ export default function Home() {
 
     setAuthError('');
     if (activePortal === 'owner') {
-      setPitch(prev => ({
-        ...prev,
-        name: regPitchName || prev.name,
-        ownerName: regName || prev.ownerName,
+      const newPitchObj: Pitch = {
+        id: 'p-' + Date.now(),
+        name: regPitchName || 'ملعب جديد',
+        area: 'بغداد',
+        city: 'بغداد',
+        type: 'خماسي',
+        ownerName: regName || 'صاحب الملعب',
         ownerPhone: regPhone,
-        subscriptionStatus: 'expired'
-      }));
+        defaultPricePerHour: 20000,
+        rating: 5.0,
+        imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
+        bio: 'ملعب جديد مجهز بالكامل.',
+        features: ['ثيل صناعي'],
+        subscriptionStatus: 'expired',
+        subscriptionDaysLeft: 0,
+        lastRenewDate: '-',
+        emergencyUsedInCurrentCycle: false
+      };
+      setPitchesList([newPitchObj]);
     }
 
     setCurrentUser({
@@ -314,7 +333,7 @@ export default function Home() {
     setAuthMsg('');
     setCurrentUser({
       role: activePortal,
-      name: activePortal === 'player' ? 'كابتن الفريق' : pitch.name,
+      name: activePortal === 'player' ? 'كابتن الفريق' : (pitch?.name || 'صاحب الملعب'),
       phone: forgotPhone
     });
   };
@@ -391,14 +410,15 @@ export default function Home() {
 
   const saveFullSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    setPitch(prev => ({
-      ...prev,
+    if (!pitch) return;
+    setPitchesList(prev => prev.map(p => p.id === pitch.id ? {
+      ...p,
       name: editName,
       area: editArea,
       bio: editBio,
       imageUrl: editImage,
       defaultPricePerHour: schedulePrice
-    }));
+    } : p));
 
     setAllSlots(prev => {
       const updated = { ...prev };
@@ -431,7 +451,6 @@ export default function Home() {
   return (
     <div dir="rtl" className="min-h-screen bg-slate-950 text-slate-100 font-sans p-3 md:p-8 flex flex-col justify-between">
       <div>
-        {/* الشريط العلوي العام مع أيقونة الساعة */}
         <header className="max-w-5xl mx-auto flex justify-between items-center pb-5 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="bg-emerald-600 p-2 rounded-xl shadow-lg shadow-emerald-900/40">
@@ -467,7 +486,6 @@ export default function Home() {
 
         <main className="max-w-5xl mx-auto mt-6">
 
-          {/* 0. شاشة تسجيل الدخول والنظام */}
           {currentUser.role === 'guest' && (
             <div className="py-8 md:py-14 max-w-md mx-auto space-y-6">
               <div className="text-center space-y-2">
@@ -776,7 +794,7 @@ export default function Home() {
           {/* 1. واجهة صاحب الملعب */}
           {currentUser.role === 'owner' && (
             <div>
-              {pitch.subscriptionStatus === 'expired' ? (
+              {!pitch || pitch.subscriptionStatus === 'expired' ? (
                 <div className="bg-slate-900 border border-rose-900/80 rounded-3xl p-6 md:p-10 max-w-2xl mx-auto my-8 text-center shadow-2xl space-y-6">
                   <div className="w-16 h-16 bg-rose-950/80 border border-rose-800 rounded-2xl flex items-center justify-center mx-auto text-rose-400">
                     <Lock className="w-8 h-8" />
@@ -785,7 +803,7 @@ export default function Home() {
                   <div>
                     <h3 className="text-2xl font-black text-white">تفعيل اشتراك الملعب</h3>
                     <p className="text-xs md:text-sm text-slate-400 mt-2 max-w-md mx-auto leading-relaxed">
-                      أهلاً بك كابتن! لتفعيل لوحة التحكم وجدول الحجوزات، حوّل مبلغ الاشتراك الشهري عبر محفظة زين كاش وأرسل الوصل.
+                      تم تعليق أو انتهاء اشتراك الملعب. لتفعيله مجدداً، يرجى التواصل مع الإدارة أو تحويل مبلغ الاشتراك عبر زين كاش.
                     </p>
                   </div>
 
@@ -994,7 +1012,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* 2. واجهة اللاعب */}
+          {/* 2. واجهة اللاعب (يعرض اليوم مع الشهر بوضوح) */}
           {currentUser.role === 'player' && (
             <div>
               {!selectedPitchId ? (
@@ -1004,25 +1022,36 @@ export default function Home() {
                     <p className="text-xs text-slate-400 mt-1">اختر ملعبك المفضل وتصفح أوقات الفراغ فوراً</p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div
-                      onClick={() => setSelectedPitchId(pitch.id)}
-                      className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden cursor-pointer hover:border-emerald-500 transition-all group"
-                    >
-                      <img src={pitch.imageUrl} alt={pitch.name} className="w-full h-44 object-cover" />
-                      <div className="p-5 space-y-2">
-                        <div className="flex justify-between items-center">
-                          <h3 className="font-bold text-white text-base">{pitch.name}</h3>
-                          <span className="text-emerald-400 font-bold text-sm">{pitch.defaultPricePerHour.toLocaleString()} د.ع</span>
-                        </div>
-                        <p className="text-xs text-slate-400">{pitch.area}</p>
-                        <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs text-emerald-400 font-bold">
-                          <span>عرض الساعات والحجز</span>
-                          <ArrowRight className="w-4 h-4" />
-                        </div>
-                      </div>
+                  {pitchesList.filter(p => p.subscriptionStatus === 'active').length === 0 ? (
+                    <div className="bg-slate-900 border border-slate-800 p-10 rounded-3xl text-center space-y-3 max-w-md mx-auto">
+                      <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
+                      <h4 className="font-bold text-white text-base">لا توجد ملاعب متاحة حالياً</h4>
+                      <p className="text-xs text-slate-400">جميع اشتراكات الملاعب منتهية أو معطلة مؤقتاً من قبل الإدارة.</p>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {pitchesList.filter(p => p.subscriptionStatus === 'active').map(p => (
+                        <div
+                          key={p.id}
+                          onClick={() => setSelectedPitchId(p.id)}
+                          className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden cursor-pointer hover:border-emerald-500 transition-all group"
+                        >
+                          <img src={p.imageUrl} alt={p.name} className="w-full h-44 object-cover" />
+                          <div className="p-5 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <h3 className="font-bold text-white text-base">{p.name}</h3>
+                              <span className="text-emerald-400 font-bold text-sm">{p.defaultPricePerHour.toLocaleString()} د.ع</span>
+                            </div>
+                            <p className="text-xs text-slate-400">{p.area}</p>
+                            <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs text-emerald-400 font-bold">
+                              <span>عرض الساعات والحجز</span>
+                              <ArrowRight className="w-4 h-4" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -1033,111 +1062,121 @@ export default function Home() {
                     <ArrowRight className="w-4 h-4" /> العودة لقائمة الملاعب
                   </button>
 
-                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
-                    <h2 className="text-2xl font-black text-white">{pitch.name}</h2>
-                    <p className="text-xs text-slate-300">{pitch.bio}</p>
+                  {pitch && (
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
+                      <h2 className="text-2xl font-black text-white">{pitch.name}</h2>
+                      <p className="text-xs text-slate-300">{pitch.bio}</p>
 
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
-                      {dateOptions.map(date => (
-                        <button
-                          key={date.index}
-                          onClick={() => setSelectedDateIndex(date.index)}
-                          className={`flex-shrink-0 px-4 py-2.5 rounded-xl border text-center text-xs ${
-                            selectedDateIndex === date.index ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-950 border-slate-800 text-slate-400'
-                          }`}
-                        >
-                          {date.dayName} ({date.dayNum})
-                        </button>
-                      ))}
-                    </div>
+                      {/* شريط الأيام والتواريخ مع الشهر بوضوح */}
+                      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                        {dateOptions.map(date => (
+                          <button
+                            key={date.index}
+                            onClick={() => setSelectedDateIndex(date.index)}
+                            className={`flex-shrink-0 px-4 py-2.5 rounded-xl border text-center text-xs transition-all ${
+                              selectedDateIndex === date.index ? 'bg-emerald-600 text-white font-bold shadow-lg' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            <span className="block font-bold">{date.dayName} {date.dayNum}</span>
+                            <span className="text-[10px] opacity-80 block mt-0.5">{date.monthName}</span>
+                          </button>
+                        ))}
+                      </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3">
-                      {currentDaySlots.map(slot => (
-                        <button
-                          key={slot.id}
-                          disabled={slot.isBooked}
-                          onClick={() => openPlayerBookingModal(slot)}
-                          className={`p-4 rounded-2xl border text-right transition-all flex justify-between items-center ${
-                            slot.isBooked ? 'bg-rose-950/20 border-rose-900/30 opacity-60' : 'bg-slate-950 border-slate-800 hover:border-emerald-500'
-                          }`}
-                        >
-                          <div>
-                            <span className="text-sm font-bold text-white block">{slot.time}</span>
-                            <span className="text-xs text-emerald-400 font-bold block mt-0.5">{slot.price.toLocaleString()} د.ع</span>
-                          </div>
-                          <span className={`text-xs px-2.5 py-1 rounded-md font-bold ${
-                            slot.isBooked ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-300'
-                          }`}>
-                            {slot.isBooked ? 'مقفول' : 'احجز الآن'}
-                          </span>
-                        </button>
-                      ))}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3">
+                        {currentDaySlots.map(slot => (
+                          <button
+                            key={slot.id}
+                            disabled={slot.isBooked}
+                            onClick={() => openPlayerBookingModal(slot)}
+                            className={`p-4 rounded-2xl border text-right transition-all flex justify-between items-center ${
+                              slot.isBooked ? 'bg-rose-950/20 border-rose-900/30 opacity-60' : 'bg-slate-950 border-slate-800 hover:border-emerald-500'
+                            }`}
+                          >
+                            <div>
+                              <span className="text-sm font-bold text-white block">{slot.time}</span>
+                              <span className="text-xs text-emerald-400 font-bold block mt-0.5">{slot.price.toLocaleString()} د.ع</span>
+                            </div>
+                            <span className={`text-xs px-2.5 py-1 rounded-md font-bold ${
+                              slot.isBooked ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-300'
+                            }`}>
+                              {slot.isBooked ? 'مقفول' : 'احجز الآن'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          {/* 3. لوحة الإدارة المركزية (مع تفاصيل الاشتراكات وأصحاب الملاعب بدقة) */}
+          {/* 3. لوحة الإدارة المركزية */}
           {currentUser.role === 'admin' && (
             <div className="bg-slate-900 border border-blue-900/60 p-6 rounded-3xl space-y-6">
               <div className="flex items-center gap-2 text-blue-400 border-b border-slate-800 pb-3">
                 <ShieldCheck className="w-6 h-6" />
-                <h3 className="text-lg font-black text-white">لوحة الإدارة المركزية (كشف بيانات الملاعب والاشتراكات)</h3>
+                <h3 className="text-lg font-black text-white">لوحة الإدارة المركزية (إدارة الملاعب والتعاقدات)</h3>
               </div>
 
-              <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
-                  <div>
-                    <h4 className="font-bold text-white text-base">{pitch.name}</h4>
-                    <p className="text-xs text-slate-400 mt-0.5">العنوان: {pitch.area}</p>
-                  </div>
-                  <span className={`text-xs px-3 py-1 rounded-full font-bold ${
-                    pitch.subscriptionStatus === 'active' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
-                  }`}>
-                    {pitch.subscriptionStatus === 'active' ? `الاشتراك نشط (${pitch.subscriptionDaysLeft} يوم متبقي)` : 'الاشتراك منتهي'}
-                  </span>
+              {pitchesList.length === 0 ? (
+                <div className="bg-slate-950 p-8 rounded-2xl border border-slate-800 text-center text-slate-400 text-xs">
+                  لا توجد ملاعب مسجلة حالياً في النظام (تم حذف جميع التعاقدات).
                 </div>
+              ) : (
+                pitchesList.map(p => (
+                  <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
+                      <div>
+                        <h4 className="font-bold text-white text-base">{p.name}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">العنوان: {p.area}</p>
+                      </div>
+                      <span className={`text-xs px-3 py-1 rounded-full font-bold ${
+                        p.subscriptionStatus === 'active' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                      }`}>
+                        {p.subscriptionStatus === 'active' ? `الاشتراك نشط (${p.subscriptionDaysLeft} يوم متبقي)` : 'الاشتراك منتهي / معطل'}
+                      </span>
+                    </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
-                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-slate-400 block">اسم صاحب الملعب:</span>
-                    <span className="text-white font-bold text-sm block">{pitch.ownerName}</span>
-                  </div>
-                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-slate-400 block">رقم هاتفه:</span>
-                    <span className="text-emerald-400 font-mono font-bold text-sm block">{pitch.ownerPhone}</span>
-                  </div>
-                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
-                    <span className="text-amber-400 font-mono font-bold text-sm block">{pitch.lastRenewDate}</span>
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                        <span className="text-slate-400 block">اسم صاحب الملعب:</span>
+                        <span className="text-white font-bold text-sm block">{p.ownerName}</span>
+                      </div>
+                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                        <span className="text-slate-400 block">رقم هاتفه:</span>
+                        <span className="text-emerald-400 font-mono font-bold text-sm block">{p.ownerPhone}</span>
+                      </div>
+                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                        <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
+                        <span className="text-amber-400 font-mono font-bold text-sm block">{p.lastRenewDate}</span>
+                      </div>
+                    </div>
 
-                <div className="pt-2 flex flex-wrap gap-3">
-                  <button
-                    onClick={() => {
-                      const todayStr = new Date().toISOString().split('T')[0];
-                      setPitch(prev => ({
-                        ...prev,
-                        subscriptionStatus: 'active',
-                        subscriptionDaysLeft: prev.subscriptionDaysLeft + 30,
-                        lastRenewDate: todayStr
-                      }));
-                    }}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                  >
-                    + تمديد الاشتراك 30 يوماً وتحديث التاريخ
-                  </button>
-                  <button
-                    onClick={() => setPitch(prev => ({ ...prev, subscriptionStatus: 'expired', subscriptionDaysLeft: 0 }))}
-                    className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                  >
-                    تعطيل اشتراك الملعب
-                  </button>
-                </div>
-              </div>
+                    <div className="pt-2 flex flex-wrap gap-3">
+                      <button
+                        onClick={() => setAdminConfirmAction('renew')}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                      >
+                        + تمديد الاشتراك 30 يوماً
+                      </button>
+                      <button
+                        onClick={() => setAdminConfirmAction('expire')}
+                        className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                      >
+                        تعطيل اشتراك الملعب
+                      </button>
+                      <button
+                        onClick={() => setAdminConfirmAction('delete')}
+                        className="bg-slate-800 hover:bg-rose-900 text-rose-400 hover:text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all border border-slate-700"
+                      >
+                        🗑️ حذف الملعب للأبد (إنهاء التعاقد)
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
 
@@ -1153,7 +1192,64 @@ export default function Home() {
         </button>
       </footer>
 
-      {/* نافذة تسجيل دخول الإدارة (كلمة السر مخفية بالنقاط) */}
+      {/* نافذة تأكيد الإدارة (الضغطرة الثانية) */}
+      {adminConfirmAction && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 bg-amber-950 border border-amber-800 text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h5 className="font-black text-white text-base">
+              {adminConfirmAction === 'renew' && 'تأكيد تمديد اشتراك الملعب لشهر إضافي؟'}
+              {adminConfirmAction === 'expire' && 'تأكيد تعطيل اشتراك هذا الملعب؟'}
+              {adminConfirmAction === 'delete' && 'تأكيد حذف الملعب وإنهاء التعاقد للأبد؟'}
+            </h5>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {adminConfirmAction === 'renew' && 'سيتم إضافة 30 يوماً وتحديث تاريخ التجديد لملعب الأساطير.'}
+              {adminConfirmAction === 'expire' && 'سيتم إخفاء الملعب فوراً من واجهة اللاعبين ومنع الحجوزات.'}
+              {adminConfirmAction === 'delete' && 'تحذير: سيتم إزالة الملعب من المنصة نهائياً ولن يظهر بعد الآن.'}
+            </p>
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                onClick={() => {
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  if (adminConfirmAction === 'renew' && pitch) {
+                    setPitchesList(prev => prev.map(p => ({
+                      ...p,
+                      subscriptionStatus: 'active',
+                      subscriptionDaysLeft: p.subscriptionDaysLeft + 30,
+                      lastRenewDate: todayStr
+                    })));
+                  } else if (adminConfirmAction === 'expire' && pitch) {
+                    setPitchesList(prev => prev.map(p => ({
+                      ...p,
+                      subscriptionStatus: 'expired',
+                      subscriptionDaysLeft: 0
+                    })));
+                  } else if (adminConfirmAction === 'delete') {
+                    setPitchesList([]);
+                    setSelectedPitchId(null);
+                  }
+                  setAdminConfirmAction(null);
+                }}
+                className={`text-white font-bold py-2.5 rounded-xl text-xs ${
+                  adminConfirmAction === 'delete' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
+              >
+                تأكيد التنفيذ
+              </button>
+              <button
+                onClick={() => setAdminConfirmAction(null)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs"
+              >
+                تراجع
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة تسجيل دخول الإدارة */}
       {showAdminModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-blue-900/80 w-full max-w-xs rounded-3xl p-6 space-y-4 text-center">
