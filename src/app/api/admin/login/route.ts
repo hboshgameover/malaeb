@@ -1,18 +1,16 @@
 import { NextResponse } from 'next/server';
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const { username, password } = await req.json();
-
-    const ADMIN_USERNAME = "hbosh";
-    const ADMIN_PASSWORD = "Zz@101629";
-
-    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-      return NextResponse.json({ success: true, message: "تم تسجيل الدخول بنجاح" });
+    const { username, password } = await request.json();
+    
+    // بيانات الأدمن المعتمدة
+    if (username === 'hbosh' && password === 'Zz@101629') {
+      return NextResponse.json({ success: true, message: 'تم تسجيل الدخول بنجاح' });
     }
-
-    return NextResponse.json({ success: false, message: "بيانات الدخول غير صحيحة" }, { status: 401 });
-  } catch (error) {
-    return NextResponse.json({ success: false, error: "حدث خطأ في الخادم" }, { status: 500 });
+    
+    return NextResponse.json({ success: false, message: 'اسم المستخدم أو الكود السري غير صحيح' }, { status: 401 });
+  } catch {
+    return NextResponse.json({ success: false, message: 'حدث خطأ في الخادم' }, { status: 500 });
   }
 }
