@@ -36,7 +36,7 @@ import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut } 
 import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyA7q79KfcmHcS2pCZ-UBNx3iDwqKSePIyo",
+  apiKey: "AIzaSyA7q79KfcMhcS2pCZ-UBHx3iDwqKSePIyo",
   authDomain: "la3batna-c6480.firebaseapp.com",
   projectId: "la3batna-c6480",
   storageBucket: "la3batna-c6480.firebasestorage.app",
