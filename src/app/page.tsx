@@ -350,8 +350,18 @@ export default function Home() {
     setAuthError('');
     setAuthLoading(true);
     try {
-      const provider = providerType === 'google' ? googleProvider : appleProvider;
-      const result = await signInWithPopup(auth, provider);
+      let result;
+      try {
+        const provider = providerType === 'google' ? googleProvider : appleProvider;
+        result = await signInWithPopup(auth, provider);
+      } catch (providerErr: any) {
+        if (providerType === 'apple' && (providerErr.code === 'auth/operation-not-allowed' || providerErr.code?.includes('unauthorized') || providerErr.code?.includes('configuration'))) {
+          setAuthError('تسجيل الدخول عبر Apple قيد الإعداد التقني من المتجر، يرجى المتابعة عبر حساب Google الآن.');
+          setAuthLoading(false);
+          return;
+        }
+        throw providerErr;
+      }
       const user = result.user;
       const uid = user.uid;
       const userName = user.displayName || (providerType === 'apple' ? 'مستخدم Apple' : 'مستخدم Google');
@@ -1072,6 +1082,66 @@ export default function Home() {
                             <span className="text-[10px] opacity-80 block mt-0.5">{date.monthName}</span>
                           </button>
                         ))}
+                      </div>
+
+                      {/* لوحة تحكم ساعات العمل والـ 24 ساعة لأبو الملعب */}
+                      <div className="bg-slate-900/80 border border-amber-550/40 p-4 rounded-2xl space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <h4 className="text-sm font-black text-amber-400 flex items-center gap-2">
+                              ⚙️ ضبط ساعات دوام الملعب ({selectedDate.dayName})
+                            </h4>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              اختر ساعات العمل المتاحة للحجز لهذا اليوم أو فعّل المنظومة على مدار 24 ساعة
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedHours24(Array.from({ length: 24 }, (_, i) => i))}
+                              className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 rounded-xl text-xs font-bold transition-all"
+                            >
+                              ⚡ فتح 24 ساعة كاملة
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedHours24([16, 17, 18, 19, 20, 21, 22, 23, 0])}
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold transition-all"
+                            >
+                              مسائي افتراضي (4 عصراً - 1 ليلاً)
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* اختيار الساعات الفردية بالنقرة */}
+                        <div className="pt-2 border-t border-slate-800/80">
+                          <span className="text-[11px] text-slate-400 block mb-2 font-bold">
+                            اضغط على أي ساعة لتفعيلها أو إيقافها للحجز ({selectedHours24.length} ساعة نشطة):
+                          </span>
+                          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5 max-h-36 overflow-y-auto p-1 bg-slate-950/60 rounded-xl border border-slate-800/60">
+                            {MASTER_24_HOURS.map(hObj => {
+                              const isActive = selectedHours24.includes(hObj.h);
+                              return (
+                                <button
+                                  key={hObj.h}
+                                  type="button"
+                                  onClick={() => {
+                                    if (isActive) {
+                                      if (selectedHours24.length > 1) {
+                                        setSelectedHours24(selectedHours24.filter(h => h !== hObj.h));
+                                      }
+                                    } else {
+                                      setSelectedHours24([...selectedHours24, hObj.h].sort((a, b) => a - b));
+                                    }
+                                  }}
+                                  className={}
+                                >
+                                  {hObj.label.split('-')[0].trim()}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
 
                       <div className="bg-slate-900/40 border border-slate-800 p-5 rounded-2xl">
