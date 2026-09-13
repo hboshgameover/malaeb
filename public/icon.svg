@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="115" fill="#020617"/>
+  <circle cx="256" cy="256" r="170" fill="#059669"/>
+  <!-- كرة قدم وألوان رياضية -->
+  <circle cx="256" cy="256" r="145" fill="#ffffff"/>
+  <polygon points="256,170 200,210 220,275 292,275 312,210" fill="#020617"/>
+  <line x1="256" y1="170" x2="256" y2="111" stroke="#020617" stroke-width="12" stroke-linecap="round"/>
+  <line x1="200" y1="210" x2="148" y2="185" stroke="#020617" stroke-width="12" stroke-linecap="round"/>
+  <line x1="312" y1="210" x2="364" y2="185" stroke="#020617" stroke-width="12" stroke-linecap="round"/>
+  <line x1="220" y1="275" x2="185" y2="335" stroke="#020617" stroke-width="12" stroke-linecap="round"/>
+  <line x1="292" y1="275" x2="327" y2="335" stroke="#020617" stroke-width="12" stroke-linecap="round"/>
+</svg>
