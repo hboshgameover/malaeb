@@ -29,11 +29,13 @@ import {
   Users, 
   Building2,
   CalendarRange,
-  TrendingUp
+  TrendingUp,
+  Settings,
+  Navigation
 } from 'lucide-react';
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -48,7 +50,6 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
-const appleProvider = new OAuthProvider('apple.com');
 const db = getFirestore(app);
 
 interface Slot {
@@ -86,6 +87,7 @@ interface Pitch {
   lastRenewDate: string;
   usedEmergencyExtension?: boolean;
   dayWorkingHours?: Record<string, number[]>;
+  googleMapsUrl?: string;
 }
 
 const IRAQ_PROVINCES = [
@@ -170,16 +172,20 @@ export default function Home() {
   const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
   const [tempPlayerName, setTempPlayerName] = useState('');
 
-  const [ownerTab, setOwnerTab] = useState<'bookings' | 'profile'>('bookings');
+  // 3 تبويبات لصاحب الملعب
+  const [ownerTab, setOwnerTab] = useState<'bookings' | 'schedule' | 'profile'>('bookings');
+  
+  // بيانات البروفايل
   const [editName, setEditName] = useState('');
   const [editProvince, setEditProvince] = useState('بغداد');
   const [editArea, setEditArea] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editImage, setEditImage] = useState('');
+  const [editGoogleMapsUrl, setEditGoogleMapsUrl] = useState('');
   const [profileSavedToast, setProfileSavedToast] = useState(false);
   const [savingPitch, setSavingPitch] = useState(false);
 
-  // إعداد ساعات العمل لكل يوم في البروفايل
+  // إعداد ساعات العمل
   const [activeConfigDay, setActiveConfigDay] = useState<string>('السبت');
   const [dayScheduleSettings, setDayScheduleSettings] = useState<Record<string, number[]>>({
     'السبت': [16, 17, 18, 19, 20, 21, 22, 23, 0],
@@ -208,7 +214,7 @@ export default function Home() {
 
   const [schedulePrice, setSchedulePrice] = useState(20000);
   
-  // فلترة سجل الإيرادات المتقدمة
+  // فلترة سجل الإيرادات
   const [revenueFilter, setRevenueFilter] = useState<'daily' | 'monthly' | 'last_month' | 'custom'>('daily');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
@@ -221,32 +227,11 @@ export default function Home() {
       if (savedUser) setCurrentUser(JSON.parse(savedUser));
     } catch {}
 
+    // جلب الملاعب بدون إعادة توليد ملعب وهمي إذا تم الحذف
     const unsubPitches = onSnapshot(collection(db, 'pitches'), (snapshot) => {
-      if (!snapshot.empty) {
-        const loaded: Pitch[] = [];
-        snapshot.forEach((doc) => loaded.push(doc.data() as Pitch));
-        setPitchesList(loaded);
-      } else {
-        const defaultP: Pitch = {
-          id: 'pitch-legend-1',
-          name: 'ملعب الأساطير الدولي',
-          city: 'بغداد',
-          area: 'المنصور - شارع 14 رمضان',
-          type: 'خماسي دولي',
-          ownerName: 'كابتن المنصور',
-          ownerPhone: OFFICIAL_PAYMENT_PHONE,
-          ownerEmail: 'admin@la3batna.iq',
-          defaultPricePerHour: 20000,
-          imageUrl: 'https://images.unsplash.com/photo-1529900241456-075e81d77a82?w=800&auto=format&fit=crop&q=60',
-          bio: 'أحدث ساحة خماسية في المنصور، كشافات نهارية، كافتيريا وبارك مراقب.',
-          subscriptionStatus: 'active',
-          subscriptionDaysLeft: 30,
-          lastRenewDate: '2026-09-12',
-          usedEmergencyExtension: false
-        };
-        setDoc(doc(db, 'pitches', defaultP.id), defaultP);
-        setPitchesList([defaultP]);
-      }
+      const loaded: Pitch[] = [];
+      snapshot.forEach((doc) => loaded.push(doc.data() as Pitch));
+      setPitchesList(loaded);
     });
 
     const unsubPlayers = onSnapshot(collection(db, 'players'), (snapshot) => {
@@ -318,6 +303,7 @@ export default function Home() {
       setEditArea(currentOwnerPitch.area);
       setEditBio(currentOwnerPitch.bio);
       setEditImage(currentOwnerPitch.imageUrl || '');
+      setEditGoogleMapsUrl(currentOwnerPitch.googleMapsUrl || '');
       setSchedulePrice(currentOwnerPitch.defaultPricePerHour || 20000);
       if (currentOwnerPitch.dayWorkingHours) {
         setDayScheduleSettings(prev => ({ ...prev, ...currentOwnerPitch.dayWorkingHours }));
@@ -327,7 +313,6 @@ export default function Home() {
 
   const activeWorkingPitchId = currentUser.role === 'owner' ? currentOwnerPitch?.id : selectedPitchId;
 
-  // تحديد ساعات العمل لليوم المختار
   const activeWorkingHoursForSelectedDate = useMemo(() => {
     const pitch = currentUser.role === 'owner' ? currentOwnerPitch : activePitchForPlayer;
     if (pitch?.dayWorkingHours && pitch.dayWorkingHours[selectedDate.dayName]) {
@@ -368,7 +353,6 @@ export default function Home() {
   const currentDayBookedCount = currentDaySlots.filter(s => s.isBooked).length;
   const currentDayRevenue = currentDaySlots.filter(s => s.isBooked).reduce((sum, s) => sum + s.price, 0);
 
-  // حسابات الإيرادات المتقدمة وسجل التواريخ
   const allPitchBookingsWithDates = useMemo(() => {
     if (!activeWorkingPitchId || !pitchSlots[activeWorkingPitchId]) return [];
     const list: { dateStr: string; slot: Slot }[] = [];
@@ -383,7 +367,7 @@ export default function Home() {
   const revenueStats = useMemo(() => {
     const now = new Date();
     const curYear = now.getFullYear();
-    const curMonth = now.getMonth(); // 0-indexed
+    const curMonth = now.getMonth();
 
     let thisMonthTotal = 0;
     let lastMonthTotal = 0;
@@ -429,26 +413,14 @@ export default function Home() {
 أحتاج إلى مساعدة بخصوص المنظومة.`
   )}`;
 
-  const handleSocialAuth = async (providerType: 'google' | 'apple') => {
+  const handleSocialAuth = async () => {
     setAuthError('');
     setAuthLoading(true);
     try {
-      let result;
-      try {
-        const provider = providerType === 'google' ? googleProvider : appleProvider;
-        result = await signInWithPopup(auth, provider);
-      } catch (pErr: any) {
-        if (providerType === 'apple' && (pErr.code === 'auth/operation-not-allowed' || pErr.code?.includes('unauthorized') || pErr.code?.includes('configuration'))) {
-          setAuthError('تسجيل دخول Apple قيد استكمال اعتماده، يرجى المتابعة بنقرة واحدة عبر حساب Google الآن.');
-          setAuthLoading(false);
-          return;
-        }
-        throw pErr;
-      }
-
+      const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
       const uid = user.uid;
-      const userName = user.displayName || (providerType === 'apple' ? 'مستخدم Apple' : 'مستخدم Google');
+      const userName = user.displayName || 'مستخدم لعبتنا';
       const userEmail = user.email || '';
 
       if (activePortal === 'player') {
@@ -559,7 +531,8 @@ export default function Home() {
       subscriptionDaysLeft: 0,
       lastRenewDate: '-',
       usedEmergencyExtension: false,
-      dayWorkingHours: dayScheduleSettings
+      dayWorkingHours: dayScheduleSettings,
+      googleMapsUrl: ''
     };
 
     try {
@@ -682,7 +655,7 @@ export default function Home() {
     }
   };
 
-  const saveFullSettings = async (e: React.FormEvent) => {
+  const saveProfileSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentOwnerPitch) return;
 
@@ -694,13 +667,29 @@ export default function Home() {
         area: editArea,
         bio: editBio,
         imageUrl: editImage,
-        defaultPricePerHour: schedulePrice,
-        dayWorkingHours: dayScheduleSettings
+        googleMapsUrl: editGoogleMapsUrl,
+        defaultPricePerHour: schedulePrice
       });
       setProfileSavedToast(true);
       setTimeout(() => setProfileSavedToast(false), 3000);
     } catch (err: any) {
       alert('تعذر حفظ التعديلات: ' + err.message);
+    } finally {
+      setSavingPitch(false);
+    }
+  };
+
+  const saveScheduleSettings = async () => {
+    if (!currentOwnerPitch) return;
+
+    setSavingPitch(true);
+    try {
+      await updateDoc(doc(db, 'pitches', currentOwnerPitch.id), {
+        dayWorkingHours: dayScheduleSettings
+      });
+      alert('تم حفظ جدول وساعات العمل بنجاح!');
+    } catch (err: any) {
+      alert('تعذر حفظ جدول العمل: ' + err.message);
     } finally {
       setSavingPitch(false);
     }
@@ -722,8 +711,9 @@ export default function Home() {
 
   if (!isClient) return null;
 
+  // إخفاء الملاعب المعطلة فوراً عن اللاعبين
   const displayedPitches = pitchesList.filter(p => {
-    const isActive = p.subscriptionStatus === 'active';
+    const isActive = p.subscriptionStatus === 'active' && (p.subscriptionDaysLeft > 0);
     const matchesProvince = selectedProvinceFilter === 'الكل' || p.city === selectedProvinceFilter;
     return isActive && matchesProvince;
   });
@@ -825,7 +815,7 @@ export default function Home() {
                   <h3 className="font-bold text-sm text-white">
                     {activePortal === 'player' ? 'تسجيل دخول اللاعبين والفرق' : 'تسجيل دخول أصحاب الملاعب'}
                   </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">سريع، آمن، ومباشر دون الحاجة لرسائل SMS</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">سريع، آمن، ومباشر لجميع الأجهزة (iOS و Android)</p>
                 </div>
 
                 {authError && (
@@ -836,9 +826,9 @@ export default function Home() {
 
                 <button
                   type="button"
-                  onClick={() => handleSocialAuth('google')}
+                  onClick={handleSocialAuth}
                   disabled={authLoading}
-                  className="w-full py-3.5 bg-white hover:bg-slate-100 text-slate-900 font-bold rounded-2xl flex items-center justify-center gap-3 text-xs transition-all shadow-md active:scale-98"
+                  className="w-full py-4 bg-white hover:bg-slate-100 text-slate-900 font-bold rounded-2xl flex items-center justify-center gap-3 text-xs transition-all shadow-md active:scale-98"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -846,19 +836,7 @@ export default function Home() {
                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                   </svg>
-                  {authLoading ? 'جارٍ تسجيل الدخول...' : 'متابعة عبر حساب Google'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSocialAuth('apple')}
-                  disabled={authLoading}
-                  className="w-full py-3.5 bg-black hover:bg-slate-900 border border-slate-700 text-white font-bold rounded-2xl flex items-center justify-center gap-3 text-xs transition-all shadow-md active:scale-98"
-                >
-                  <svg className="w-4 h-4 fill-current" viewBox="0 0 170 170">
-                    <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.69-3.08-7.7-7.85-12.03-14.34-6.42-9.68-11.51-20.91-15.26-33.68-3.75-12.77-5.63-25.1-5.63-36.99 0-14.65 3.63-26.79 10.89-36.43 7.26-9.64 16.59-14.58 27.99-14.83 5.48 0 11.2 1.44 17.16 4.33 5.96 2.89 10.15 4.39 12.57 4.5 2.02-.11 6.38-1.67 13.09-4.67 6.71-3.01 12.51-4.41 17.41-4.22 13.32.75 23.86 5.41 31.62 13.98-11.66 7.07-17.39 16.89-17.18 29.47.23 9.87 4.09 18.23 11.58 25.07 7.49 6.84 16.48 10.74 26.97 11.69-2.22 6.94-4.88 14.17-7.98 21.68zM119.22 33.09c0-7.39 2.65-14.42 7.95-21.09 5.3-6.67 11.83-10.75 19.59-12.24.43 1.39.64 2.78.64 4.17 0 7.39-2.76 14.5-8.28 21.33-5.52 6.83-12.18 10.8-19.9 11.91z"/>
-                  </svg>
-                  {authLoading ? 'جارٍ تسجيل الدخول...' : 'متابعة عبر حساب Apple'}
+                  {authLoading ? 'جارٍ تسجيل الدخول...' : 'متابعة الدخول الفوري السريع'}
                 </button>
               </div>
             </div>
@@ -871,10 +849,6 @@ export default function Home() {
                   <User className="w-5 h-5" />
                   <h3 className="font-black text-sm text-white">إكمال الملف الشخصي للكابتن</h3>
                 </div>
-
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  أهلاً بك كابتن! يرجى إدخال اسمك ورقم هاتفك العراقي لتثبيت حجوزاتك وإشعار صاحب الملعب بها:
-                </p>
 
                 <form onSubmit={handleSavePlayerProfile} className="space-y-3">
                   <div>
@@ -902,17 +876,13 @@ export default function Home() {
                     />
                   </div>
 
-                  {authError && (
-                    <p className="text-xs text-rose-400 flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5" /> {authError}
-                    </p>
-                  )}
+                  {authError && <p className="text-xs text-rose-400">{authError}</p>}
 
                   <button
                     type="submit"
                     className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 rounded-xl text-xs transition-all shadow-lg"
                   >
-                    حفظ الملف ومتابعة الحجز
+                    حفظ ومتابعة الحجز
                   </button>
                 </form>
               </div>
@@ -1002,31 +972,16 @@ export default function Home() {
                   </button>
                 </div>
                 <form onSubmit={handleSaveNewPlayerName} className="space-y-3">
-                  <div>
-                    <label className="text-xs text-slate-300 block mb-1">الاسم الجديد:</label>
-                    <input
-                      type="text"
-                      required
-                      value={tempPlayerName}
-                      onChange={(e) => setTempPlayerName(e.target.value)}
-                      placeholder="اكتب اسمك الجديد"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-emerald-500 outline-none"
-                    />
-                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={tempPlayerName}
+                    onChange={(e) => setTempPlayerName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                  />
                   <div className="grid grid-cols-2 gap-2 pt-2">
-                    <button
-                      type="submit"
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-xl text-xs"
-                    >
-                      حفظ التغيير
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowEditPlayerModal(false)}
-                      className="bg-slate-800 text-slate-300 font-bold py-2 rounded-xl text-xs"
-                    >
-                      إلغاء
-                    </button>
+                    <button type="submit" className="bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs">حفظ</button>
+                    <button type="button" onClick={() => setShowEditPlayerModal(false)} className="bg-slate-800 text-slate-300 font-bold py-2 rounded-xl text-xs">إلغاء</button>
                   </div>
                 </form>
               </div>
@@ -1044,10 +999,8 @@ export default function Home() {
                     <h3 className="text-2xl font-black text-white">
                       {currentOwnerPitch.lastRenewDate === '-' ? 'تفعيل اشتراك الملعب لأول مرة' : `انتهى اشتراك ملعب (${currentOwnerPitch.name})`}
                     </h3>
-                    <p className="text-xs md:text-sm text-slate-400 mt-2 max-w-md mx-auto leading-relaxed">
-                      {currentOwnerPitch.lastRenewDate === '-' 
-                        ? 'يرجى تحويل مبلغ الاشتراك الأول عبر محفظة زين كاش لاعتماد الملعب ونشره في المنظومة.' 
-                        : 'انتهت صلاحية اشتراك هذا الملعب. يرجى تجديد الاشتراك الشهري عبر محفظة زين كاش للمتابعة.'}
+                    <p className="text-xs md:text-sm text-slate-400 mt-2 max-w-md mx-auto">
+                      يرجى تحويل مبلغ الاشتراك الشهري عبر محفظة زين كاش للمتابعة.
                     </p>
                   </div>
 
@@ -1078,38 +1031,48 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={handleActivateEmergencyExtension}
-                        className="w-full bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/60 text-amber-300 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
+                        className="w-full bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/60 text-amber-300 font-bold py-3 rounded-xl text-xs"
                       >
-                        <Zap className="w-4 h-4 text-amber-400" />
-                        طلب تمديد طارئ (مهلة 24 ساعة لاستمرار الحجوزات)
+                        <Zap className="w-4 h-4 text-amber-400" /> طلب تمديد طارئ (24 ساعة)
                       </button>
                     )}
                   </div>
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="flex border-b border-slate-800 gap-6">
+                  {/* شريط التبويبات الثلاثة لصاحب الملعب */}
+                  <div className="flex border-b border-slate-800 gap-4 overflow-x-auto pb-1 scrollbar-thin">
                     <button
                       onClick={() => setOwnerTab('bookings')}
-                      className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-all ${
+                      className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
                         ownerTab === 'bookings' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
                       }`}
                     >
                       <CalendarIcon className="w-4 h-4" /> إدارة جدول الحجوزات ({currentOwnerPitch.name})
                     </button>
+
+                    <button
+                      onClick={() => setOwnerTab('schedule')}
+                      className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
+                        ownerTab === 'schedule' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Settings className="w-4 h-4" /> أوقات وساعات الدوام (24 ساعة)
+                    </button>
+
                     <button
                       onClick={() => setOwnerTab('profile')}
-                      className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-all ${
+                      className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
                         ownerTab === 'profile' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <Edit3 className="w-4 h-4" /> تعديل بيانات وصورة الملعب وساعات العمل
+                      <Edit3 className="w-4 h-4" /> بيانات الملعب والموقع الجغرافي
                     </button>
                   </div>
 
+                  {/* تبويب الحجوزات والمالية */}
                   {ownerTab === 'bookings' && (
                     <div className="space-y-6">
-                      {/* لوحة الإيرادات وسجل الحسابات */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
                           <div className="flex items-center justify-between">
@@ -1147,13 +1110,13 @@ export default function Home() {
                             </p>
                             <span className="text-[10px] text-slate-500 mt-0.5 block">
                               {revenueFilter === 'daily' && 'إيراد المواعيد المحجوزة لليوم المختار'}
-                              {revenueFilter === 'monthly' && 'إجمالي حجوزات الشهر الحالي المعتمدة'}
-                              {revenueFilter === 'last_month' && 'إجمالي حجوزات الشهر السابق المؤرشفة'}
+                              {revenueFilter === 'monthly' && 'إجمالي حجوزات الشهر الحالي'}
+                              {revenueFilter === 'last_month' && 'إجمالي حجوزات الشهر الماضي'}
                               {revenueFilter === 'custom' && `من ${customStartDate || '...'} إلى ${customEndDate || '...'}`}
                             </span>
                           </div>
 
-                          <div className="pt-2 border-t border-slate-850 flex items-center justify-between">
+                          <div className="pt-2 border-t border-slate-850">
                             <button
                               onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
                               className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1"
@@ -1192,13 +1155,12 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* لوحة الفلترة من تاريخ إلى تاريخ */}
                       {showRevenueBreakdown && (
                         <div className="bg-slate-900/90 border border-amber-500/40 p-5 rounded-2xl space-y-4">
                           <h4 className="text-sm font-black text-amber-400 flex items-center gap-2">
                             <CalendarRange className="w-4 h-4" /> كشف إيرادات الملعب من تاريخ إلى تاريخ
                           </h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div>
                               <label className="text-xs text-slate-300 block mb-1">من تاريخ:</label>
                               <input
@@ -1233,7 +1195,7 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* شريط اختيار الأيام */}
+                      {/* شريط الأيام */}
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
                         {dateOptions.map(date => (
                           <button
@@ -1249,7 +1211,7 @@ export default function Home() {
                         ))}
                       </div>
 
-                      {/* قائمة الحجوزات الصافية فقط */}
+                      {/* قائمة الحجوزات */}
                       <div className="bg-slate-900/40 border border-slate-800 p-5 rounded-2xl">
                         <h4 className="font-bold text-sm text-white mb-4">جدول المواعيد: {selectedDate.dayName} ({selectedDate.dayNum} {selectedDate.monthName})</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -1309,16 +1271,137 @@ export default function Home() {
                     </div>
                   )}
 
+                  {/* تبويب إعدادات الدوام والـ 24 ساعة المنفصل */}
+                  {ownerTab === 'schedule' && (
+                    <div className="bg-slate-900 border border-amber-500/40 p-6 rounded-3xl space-y-6 max-w-4xl">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                        <div>
+                          <h4 className="text-base font-black text-amber-400 flex items-center gap-2">
+                            ⏰ إعداد ساعات الدوام الأسبوعية ونظام 24 ساعة
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-1">
+                            خصص ساعات العمل لكل يوم بشكل مستقل (مثال: السبت ساعتين، وباقي الأيام 24 ساعة مفتوحة)
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDayScheduleSettings(prev => ({
+                                ...prev,
+                                [activeConfigDay]: Array.from({ length: 24 }, (_, i) => i)
+                              }));
+                            }}
+                            className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black transition-all shadow-md"
+                          >
+                            ⚡ تفعيل 24 ساعة ليوم ({activeConfigDay})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const currentDayHours = dayScheduleSettings[activeConfigDay] || [16, 17, 18, 19, 20, 21, 22, 23, 0];
+                              const updated: Record<string, number[]> = {};
+                              WEEK_DAYS.forEach(d => { updated[d] = [...currentDayHours]; });
+                              setDayScheduleSettings(updated);
+                              alert(`تم تعميم أوقات يوم (${activeConfigDay}) على جميع أيام الأسبوع!`);
+                            }}
+                            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 rounded-xl text-xs font-bold transition-all"
+                          >
+                            تعميم على باقي الأيام
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* أزرار الأيام */}
+                      <div>
+                        <label className="text-xs text-slate-300 block mb-2 font-bold">حدد اليوم المراد تعديل ساعاته:</label>
+                        <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                          {WEEK_DAYS.map(day => (
+                            <button
+                              key={day}
+                              type="button"
+                              onClick={() => setActiveConfigDay(day)}
+                              className={`py-2 px-1 rounded-xl text-xs font-bold border transition-all ${
+                                activeConfigDay === day
+                                  ? 'bg-amber-600 text-slate-950 border-amber-400 font-black shadow-lg scale-102'
+                                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                              }`}
+                            >
+                              {day}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* الـ 24 ساعة كاملة */}
+                      <div>
+                        <div className="flex justify-between items-center mb-2.5">
+                          <span className="text-xs text-slate-300 font-bold">
+                            ساعات يوم ({activeConfigDay}) المتاحة: {(dayScheduleSettings[activeConfigDay] || []).length} ساعة من 24
+                          </span>
+                          <span className="text-[11px] text-slate-500 font-mono">انقر على أي ساعة لفتحها أو إغلاقها</span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                          {MASTER_24_HOURS.map(hObj => {
+                            const activeHours = dayScheduleSettings[activeConfigDay] || [];
+                            const isSelected = activeHours.includes(hObj.h);
+                            return (
+                              <button
+                                key={hObj.h}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) {
+                                    if (activeHours.length > 1) {
+                                      setDayScheduleSettings(prev => ({
+                                        ...prev,
+                                        [activeConfigDay]: activeHours.filter(h => h !== hObj.h)
+                                      }));
+                                    }
+                                  } else {
+                                    setDayScheduleSettings(prev => ({
+                                      ...prev,
+                                      [activeConfigDay]: [...activeHours, hObj.h].sort((a, b) => a - b)
+                                    }));
+                                  }
+                                }}
+                                className={`py-2 px-1.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-sm'
+                                    : 'bg-slate-900 text-slate-500 border-slate-800 hover:border-slate-700 hover:text-slate-300'
+                                }`}
+                              >
+                                <span className="text-[11px] font-bold">{hObj.label.split('-')[0].trim()}</span>
+                                <span className="text-[9px] opacity-75">{isSelected ? 'متاح' : 'مغلق'}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={saveScheduleSettings}
+                        disabled={savingPitch}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3.5 rounded-xl text-xs transition-all shadow-lg"
+                      >
+                        {savingPitch ? 'جارٍ الحفظ في السحابة...' : 'حفظ وتثبيت جدول أوقات العمل في السحابة'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* تبويب البروفايل وموقع Google Maps */}
                   {ownerTab === 'profile' && (
-                    <form onSubmit={saveFullSettings} className="space-y-6 max-w-3xl">
+                    <form onSubmit={saveProfileSettings} className="space-y-6 max-w-3xl">
                       {profileSavedToast && (
                         <div className="p-3 bg-emerald-950 border border-emerald-600 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات وساعات العمل في السحابة بنجاح!
+                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات والموقع في السحابة بنجاح!
                         </div>
                       )}
 
                       <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-5">
-                        <h4 className="font-bold text-white text-base">بيانات الملعب الأساسية</h4>
+                        <h4 className="font-bold text-white text-base">بيانات الملعب والموقع الجغرافي</h4>
 
                         <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
                           <label className="text-xs text-slate-300 block font-bold">صورة واجهة الملعب:</label>
@@ -1382,6 +1465,23 @@ export default function Home() {
                           </div>
                         </div>
 
+                        {/* حقل رابط خرائط Google Maps */}
+                        <div className="bg-slate-950 p-4 rounded-2xl border border-emerald-900/50 space-y-2">
+                          <label className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
+                            <Navigation className="w-4 h-4" /> رابط موقع الملعب على خرائط Google (Google Maps):
+                          </label>
+                          <input
+                            type="url"
+                            value={editGoogleMapsUrl}
+                            onChange={(e) => setEditGoogleMapsUrl(e.target.value)}
+                            placeholder="مثال: https://maps.app.goo.gl/XXXXXXX أو رابط الموقع المباشر"
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white font-mono outline-none focus:border-emerald-500"
+                          />
+                          <p className="text-[10px] text-slate-400">
+                            * افتح تطبيق Google Maps عند ملعبك، اضغط (مشاركة أو Share)، وانسخ الرابط والصقه هنا ليتمكن اللاعبون من الوصول للملعب بالـ GPS بنقرة واحدة.
+                          </p>
+                        </div>
+
                         <div>
                           <label className="text-xs text-slate-300 block mb-1">وصف الملعب ومميزاته:</label>
                           <textarea
@@ -1391,7 +1491,7 @@ export default function Home() {
                           />
                         </div>
 
-                        <div className="pt-3 border-t border-slate-800">
+                        <div className="pt-2 border-t border-slate-800">
                           <label className="text-xs text-slate-300 block mb-1">سعر الساعة الافتراضي (د.ع):</label>
                           <input
                             type="number"
@@ -1402,121 +1502,12 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* منظومة تحديد ساعات العمل والـ 24 ساعة لكل يوم على حدة */}
-                      <div className="bg-slate-900 border border-amber-500/40 p-6 rounded-3xl space-y-5">
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
-                          <div>
-                            <h4 className="text-base font-black text-amber-400 flex items-center gap-2">
-                              ⏰ إعدادات ساعات الدوام والـ 24 ساعة
-                            </h4>
-                            <p className="text-xs text-slate-400 mt-1">
-                              حدد ساعات العمل لكل يوم بشكل منفصل (مثلاً السبت ساعتين فقط، وباقي الأيام 24 ساعة)
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDayScheduleSettings(prev => ({
-                                  ...prev,
-                                  [activeConfigDay]: Array.from({ length: 24 }, (_, i) => i)
-                                }));
-                              }}
-                              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black transition-all shadow-md"
-                            >
-                              ⚡ فتح 24 ساعة ليوم ({activeConfigDay})
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const currentDayHours = dayScheduleSettings[activeConfigDay] || [16, 17, 18, 19, 20, 21, 22, 23, 0];
-                                const updated: Record<string, number[]> = {};
-                                WEEK_DAYS.forEach(d => { updated[d] = [...currentDayHours]; });
-                                setDayScheduleSettings(updated);
-                                alert(`تم تطبيق ساعات يوم (${activeConfigDay}) على جميع أيام الأسبوع بنجاح!`);
-                              }}
-                              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 rounded-xl text-xs font-bold transition-all"
-                            >
-                              تطبيق على كل أيام الأسبوع
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* اختيار اليوم للتعديل */}
-                        <div>
-                          <label className="text-xs text-slate-300 block mb-2 font-bold">اختر اليوم لتحديد أوقات عمله:</label>
-                          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-                            {WEEK_DAYS.map(day => (
-                              <button
-                                key={day}
-                                type="button"
-                                onClick={() => setActiveConfigDay(day)}
-                                className={`py-2 px-1 rounded-xl text-xs font-bold border transition-all ${
-                                  activeConfigDay === day
-                                    ? 'bg-amber-600 text-slate-950 border-amber-400 font-black shadow-lg scale-102'
-                                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                                }`}
-                              >
-                                {day}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* قائمة الـ 24 ساعة كاملة بالنقرة */}
-                        <div className="pt-2">
-                          <div className="flex justify-between items-center mb-2.5">
-                            <span className="text-xs text-slate-300 font-bold">
-                              ساعات يوم ({activeConfigDay}) النشطة: {(dayScheduleSettings[activeConfigDay] || []).length} ساعة من 24
-                            </span>
-                            <span className="text-[11px] text-slate-500 font-mono">اضغط على الساعة للتشغيل أو الإيقاف</span>
-                          </div>
-
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-slate-950 p-3 rounded-2xl border border-slate-800">
-                            {MASTER_24_HOURS.map(hObj => {
-                              const activeHours = dayScheduleSettings[activeConfigDay] || [];
-                              const isSelected = activeHours.includes(hObj.h);
-                              return (
-                                <button
-                                  key={hObj.h}
-                                  type="button"
-                                  onClick={() => {
-                                    if (isSelected) {
-                                      if (activeHours.length > 1) {
-                                        setDayScheduleSettings(prev => ({
-                                          ...prev,
-                                          [activeConfigDay]: activeHours.filter(h => h !== hObj.h)
-                                        }));
-                                      }
-                                    } else {
-                                      setDayScheduleSettings(prev => ({
-                                        ...prev,
-                                        [activeConfigDay]: [...activeHours, hObj.h].sort((a, b) => a - b)
-                                      }));
-                                    }
-                                  }}
-                                  className={`py-2 px-1.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
-                                    isSelected
-                                      ? 'bg-emerald-600 text-white border-emerald-400 shadow-sm'
-                                      : 'bg-slate-900 text-slate-500 border-slate-800 hover:border-slate-700 hover:text-slate-300'
-                                  }`}
-                                >
-                                  <span className="text-[11px] font-bold">{hObj.label.split('-')[0].trim()}</span>
-                                  <span className="text-[9px] opacity-75">{isSelected ? 'متاح للحجز' : 'مغلق'}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-
                       <button
                         type="submit"
                         disabled={savingPitch}
                         className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-3.5 rounded-xl text-xs transition-all shadow-lg"
                       >
-                        {savingPitch ? 'جارٍ الحفظ في السحابة...' : 'حفظ التعديلات وساعات العمل في السحابة'}
+                        {savingPitch ? 'جارٍ الحفظ في السحابة...' : 'حفظ بيانات الملعب والموقع الجغرافي'}
                       </button>
                     </form>
                   )}
@@ -1569,8 +1560,8 @@ export default function Home() {
                   {displayedPitches.length === 0 ? (
                     <div className="bg-slate-900 border border-slate-800 p-10 rounded-3xl text-center space-y-3 max-w-md mx-auto">
                       <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
-                      <h4 className="font-bold text-white text-base">لا توجد ملاعب في {selectedProvinceFilter}</h4>
-                      <p className="text-xs text-slate-400">جرب اختيار محافظة أخرى أو تصفح كل العراق.</p>
+                      <h4 className="font-bold text-white text-base">لا توجد ملاعب نشطة حالياً في {selectedProvinceFilter}</h4>
+                      <p className="text-xs text-slate-400">يرجى تجربة محافظة أخرى أو تصفح كل العراق.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1590,7 +1581,7 @@ export default function Home() {
                               <MapPin className="w-3.5 h-3.5 text-emerald-400" /> {p.city} - {p.area}
                             </p>
                             <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs text-emerald-400 font-bold">
-                              <span>حجز موعد الآن</span>
+                              <span>عرض المواعيد والموقع الجغرافي</span>
                               <ArrowRight className="w-4 h-4" />
                             </div>
                           </div>
@@ -1610,12 +1601,27 @@ export default function Home() {
 
                   {activePitchForPlayer && (
                     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
-                      <div>
-                        <h2 className="text-2xl font-black text-white">{activePitchForPlayer.name}</h2>
-                        <span className="text-xs text-emerald-400 font-bold flex items-center gap-1 mt-1">
-                          <MapPin className="w-3.5 h-3.5" /> {activePitchForPlayer.city} - {activePitchForPlayer.area}
-                        </span>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <h2 className="text-2xl font-black text-white">{activePitchForPlayer.name}</h2>
+                          <span className="text-xs text-emerald-400 font-bold flex items-center gap-1 mt-1">
+                            <MapPin className="w-3.5 h-3.5" /> {activePitchForPlayer.city} - {activePitchForPlayer.area}
+                          </span>
+                        </div>
+
+                        {activePitchForPlayer.googleMapsUrl && (
+                          <a
+                            href={activePitchForPlayer.googleMapsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-md self-start sm:self-auto"
+                          >
+                            <Navigation className="w-4 h-4 text-white animate-bounce" />
+                            فتح موقع الملعب على خرائط Google
+                          </a>
+                        )}
                       </div>
+
                       <p className="text-xs text-slate-300">{activePitchForPlayer.bio}</p>
 
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
@@ -1701,7 +1707,7 @@ export default function Home() {
                   <div>
                     <span className="text-xs text-slate-400 block">الملاعب النشطة حالياً</span>
                     <span className="text-2xl font-black text-emerald-400">
-                      {pitchesList.filter(p => p.subscriptionStatus === 'active').length} نشط
+                      {pitchesList.filter(p => p.subscriptionStatus === 'active' && p.subscriptionDaysLeft > 0).length} نشط
                     </span>
                   </div>
                 </div>
@@ -1709,74 +1715,80 @@ export default function Home() {
 
               <div className="space-y-4 pt-2">
                 <h4 className="font-bold text-sm text-slate-300">إدارة اشتراكات الملاعب:</h4>
-                {pitchesList.map(p => (
-                  <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
-                      <div>
-                        <h4 className="font-bold text-white text-base">{p.name}</h4>
-                        <p className="text-xs text-slate-400 mt-0.5">{p.city} - {p.area}</p>
+                {pitchesList.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-6">لا توجد ملاعب في النظام حالياً.</p>
+                ) : (
+                  pitchesList.map(p => (
+                    <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
+                        <div>
+                          <h4 className="font-bold text-white text-base">{p.name}</h4>
+                          <p className="text-xs text-slate-400 mt-0.5">{p.city} - {p.area}</p>
+                        </div>
+                        <span className={`text-xs px-3 py-1 rounded-full font-bold ${
+                          p.subscriptionStatus === 'active' && p.subscriptionDaysLeft > 0 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                        }`}>
+                          {p.subscriptionStatus === 'active' && p.subscriptionDaysLeft > 0 ? `نشط (${p.subscriptionDaysLeft} يوم)` : 'معطل / منتهي'}
+                        </span>
                       </div>
-                      <span className={`text-xs px-3 py-1 rounded-full font-bold ${
-                        p.subscriptionStatus === 'active' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
-                      }`}>
-                        {p.subscriptionStatus === 'active' ? `نشط (${p.subscriptionDaysLeft} يوم)` : 'معطل / منتهي'}
-                      </span>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-slate-400 block">صاحب الملعب:</span>
-                        <span className="text-white font-bold text-sm block">{p.ownerName}</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                          <span className="text-slate-400 block">صاحب الملعب:</span>
+                          <span className="text-white font-bold text-sm block">{p.ownerName}</span>
+                        </div>
+                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                          <span className="text-slate-400 block">رقم الهاتف:</span>
+                          <span className="text-emerald-400 font-mono font-bold text-sm block">{p.ownerPhone}</span>
+                        </div>
+                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                          <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
+                          <span className="text-amber-400 font-mono font-bold text-sm block">{p.lastRenewDate}</span>
+                        </div>
                       </div>
-                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-slate-400 block">رقم الهاتف:</span>
-                        <span className="text-emerald-400 font-mono font-bold text-sm block">{p.ownerPhone}</span>
-                      </div>
-                      <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
-                        <span className="text-amber-400 font-mono font-bold text-sm block">{p.lastRenewDate}</span>
-                      </div>
-                    </div>
 
-                    <div className="pt-2 flex flex-wrap gap-3">
-                      <button
-                        onClick={async () => {
-                          const today = new Date().toISOString().split('T')[0];
-                          await updateDoc(doc(db, 'pitches', p.id), {
-                            subscriptionStatus: 'active',
-                            subscriptionDaysLeft: (p.subscriptionDaysLeft || 0) + 30,
-                            lastRenewDate: today,
-                            usedEmergencyExtension: false
-                          });
-                        }}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                      >
-                        + تمديد 30 يوماً
-                      </button>
-                      <button
-                        onClick={async () => {
-                          await updateDoc(doc(db, 'pitches', p.id), {
-                            subscriptionStatus: 'expired',
-                            subscriptionDaysLeft: 0
-                          });
-                        }}
-                        className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                      >
-                        تعطيل الحساب
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (confirm('هل أنت متأكد من حذف الملعب نهائياً؟')) {
-                            await deleteDoc(doc(db, 'pitches', p.id));
-                          }
-                        }}
-                        className="bg-slate-800 hover:bg-rose-900 text-rose-400 hover:text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all border border-slate-700"
-                      >
-                        حذف نهائياً
-                      </button>
+                      <div className="pt-2 flex flex-wrap gap-3">
+                        <button
+                          onClick={async () => {
+                            const today = new Date().toISOString().split('T')[0];
+                            await updateDoc(doc(db, 'pitches', p.id), {
+                              subscriptionStatus: 'active',
+                              subscriptionDaysLeft: (p.subscriptionDaysLeft || 0) + 30,
+                              lastRenewDate: today,
+                              usedEmergencyExtension: false
+                            });
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                        >
+                          + تمديد 30 يوماً
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await updateDoc(doc(db, 'pitches', p.id), {
+                              subscriptionStatus: 'expired',
+                              subscriptionDaysLeft: 0
+                            });
+                            alert('تم تعطيل الملعب بنجاح وإخفاؤه عن قائمة اللاعبين');
+                          }}
+                          className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                        >
+                          تعطيل الحساب
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (confirm(`هل أنت متأكد من حذف ملعب (${p.name}) نهائياً من النظام؟`)) {
+                              await deleteDoc(doc(db, 'pitches', p.id));
+                              alert('تم حذف الملعب نهائياً!');
+                            }
+                          }}
+                          className="bg-slate-800 hover:bg-rose-900 text-rose-400 hover:text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all border border-slate-700"
+                        >
+                          حذف نهائياً
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           )}
