@@ -27,10 +27,11 @@ import {
   Upload, 
   Headphones, 
   Users, 
-  Building2 
+  Building2,
+  CalendarRange,
+  TrendingUp
 } from 'lucide-react';
 
-// إعداد Firebase الصريح والمباشر داخل الملف لقطع دابر أي خطأ بالمفاتيح
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, getFirestore } from "firebase/firestore";
@@ -84,6 +85,7 @@ interface Pitch {
   subscriptionDaysLeft: number;
   lastRenewDate: string;
   usedEmergencyExtension?: boolean;
+  dayWorkingHours?: Record<string, number[]>;
 }
 
 const IRAQ_PROVINCES = [
@@ -92,6 +94,8 @@ const IRAQ_PROVINCES = [
   'الأنبار', 'ديالى', 'واسط', 'صلاح الدين', 'ذي قار', 
   'ميسان', 'المثنى', 'الديوانية'
 ];
+
+const WEEK_DAYS = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
 
 const MASTER_24_HOURS = [
   { h: 0, label: '12:00 ص - 01:00 ص' },
@@ -173,6 +177,19 @@ export default function Home() {
   const [editBio, setEditBio] = useState('');
   const [editImage, setEditImage] = useState('');
   const [profileSavedToast, setProfileSavedToast] = useState(false);
+  const [savingPitch, setSavingPitch] = useState(false);
+
+  // إعداد ساعات العمل لكل يوم في البروفايل
+  const [activeConfigDay, setActiveConfigDay] = useState<string>('السبت');
+  const [dayScheduleSettings, setDayScheduleSettings] = useState<Record<string, number[]>>({
+    'السبت': [16, 17, 18, 19, 20, 21, 22, 23, 0],
+    'الأحد': [16, 17, 18, 19, 20, 21, 22, 23, 0],
+    'الإثنين': [16, 17, 18, 19, 20, 21, 22, 23, 0],
+    'الثلاثاء': [16, 17, 18, 19, 20, 21, 22, 23, 0],
+    'الأربعاء': [16, 17, 18, 19, 20, 21, 22, 23, 0],
+    'الخميس': [16, 17, 18, 19, 20, 21, 22, 23, 0],
+    'الجمعة': [16, 17, 18, 19, 20, 21, 22, 23, 0],
+  });
 
   const [selectedPitchId, setSelectedPitchId] = useState<string | null>(null);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
@@ -189,9 +206,13 @@ export default function Home() {
   const [slotToConfirmCancel, setSlotToConfirmCancel] = useState<Slot | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  const [selectedHours24, setSelectedHours24] = useState<number[]>([16, 17, 18, 19, 20, 21, 22, 23, 0]);
   const [schedulePrice, setSchedulePrice] = useState(20000);
-  const [revenueFilter, setRevenueFilter] = useState<'daily' | 'monthly'>('daily');
+  
+  // فلترة سجل الإيرادات المتقدمة
+  const [revenueFilter, setRevenueFilter] = useState<'daily' | 'monthly' | 'last_month' | 'custom'>('daily');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [showRevenueBreakdown, setShowRevenueBreakdown] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
@@ -287,6 +308,37 @@ export default function Home() {
 
   const selectedDate = dateOptions[selectedDateIndex];
 
+  const currentOwnerPitch = pitchesList.find(p => p.id === currentUser.pitchId) || pitchesList[0];
+  const activePitchForPlayer = pitchesList.find(p => p.id === selectedPitchId);
+
+  useEffect(() => {
+    if (currentOwnerPitch) {
+      setEditName(currentOwnerPitch.name);
+      setEditProvince(currentOwnerPitch.city || 'بغداد');
+      setEditArea(currentOwnerPitch.area);
+      setEditBio(currentOwnerPitch.bio);
+      setEditImage(currentOwnerPitch.imageUrl || '');
+      setSchedulePrice(currentOwnerPitch.defaultPricePerHour || 20000);
+      if (currentOwnerPitch.dayWorkingHours) {
+        setDayScheduleSettings(prev => ({ ...prev, ...currentOwnerPitch.dayWorkingHours }));
+      }
+    }
+  }, [currentOwnerPitch?.id]);
+
+  const activeWorkingPitchId = currentUser.role === 'owner' ? currentOwnerPitch?.id : selectedPitchId;
+
+  // تحديد ساعات العمل لليوم المختار
+  const activeWorkingHoursForSelectedDate = useMemo(() => {
+    const pitch = currentUser.role === 'owner' ? currentOwnerPitch : activePitchForPlayer;
+    if (pitch?.dayWorkingHours && pitch.dayWorkingHours[selectedDate.dayName]) {
+      return pitch.dayWorkingHours[selectedDate.dayName];
+    }
+    if (dayScheduleSettings[selectedDate.dayName]) {
+      return dayScheduleSettings[selectedDate.dayName];
+    }
+    return [16, 17, 18, 19, 20, 21, 22, 23, 0];
+  }, [currentOwnerPitch, activePitchForPlayer, selectedDate.dayName, dayScheduleSettings, currentUser.role]);
+
   const generateSlots = (hours: number[], price: number, dateStr: string): Slot[] => {
     return [...hours].sort((a, b) => a - b).map(h => {
       const found = MASTER_24_HOURS.find(m => m.h === h)!;
@@ -300,50 +352,81 @@ export default function Home() {
     });
   };
 
-  const currentOwnerPitch = pitchesList.find(p => p.id === currentUser.pitchId) || pitchesList[0];
-  const activePitchForPlayer = pitchesList.find(p => p.id === selectedPitchId);
-
-  useEffect(() => {
-    if (currentOwnerPitch) {
-      setEditName(currentOwnerPitch.name);
-      setEditProvince(currentOwnerPitch.city || 'بغداد');
-      setEditArea(currentOwnerPitch.area);
-      setEditBio(currentOwnerPitch.bio);
-      setEditImage(currentOwnerPitch.imageUrl || '');
-      setSchedulePrice(currentOwnerPitch.defaultPricePerHour);
-    }
-  }, [currentOwnerPitch?.id]);
-
-  const activeWorkingPitchId = currentUser.role === 'owner' ? currentOwnerPitch?.id : selectedPitchId;
-
   const currentDaySlots = useMemo(() => {
     if (!activeWorkingPitchId) return [];
     const pitchDayData = pitchSlots[activeWorkingPitchId]?.[selectedDate.dateStr];
+    const defaults = generateSlots(activeWorkingHoursForSelectedDate, schedulePrice, selectedDate.dateStr);
     if (pitchDayData && pitchDayData.length > 0) {
-      const defaults = generateSlots(selectedHours24, schedulePrice, selectedDate.dateStr);
       return defaults.map(ds => {
         const booked = pitchDayData.find(b => b.hourNumber === ds.hourNumber && b.isBooked);
         return booked || ds;
       });
     }
-    return generateSlots(selectedHours24, schedulePrice, selectedDate.dateStr);
-  }, [activeWorkingPitchId, selectedDate.dateStr, pitchSlots, selectedHours24, schedulePrice]);
+    return defaults;
+  }, [activeWorkingPitchId, selectedDate.dateStr, pitchSlots, activeWorkingHoursForSelectedDate, schedulePrice]);
 
   const currentDayBookedCount = currentDaySlots.filter(s => s.isBooked).length;
   const currentDayRevenue = currentDaySlots.filter(s => s.isBooked).reduce((sum, s) => sum + s.price, 0);
 
-  const totalMonthlyRevenue = useMemo(() => {
-    if (!activeWorkingPitchId || !pitchSlots[activeWorkingPitchId]) return 320000;
-    const allPBookings = Object.values(pitchSlots[activeWorkingPitchId]).flat().filter(s => s.isBooked);
-    return allPBookings.reduce((sum, s) => sum + s.price, 0) + 320000;
+  // حسابات الإيرادات المتقدمة وسجل التواريخ
+  const allPitchBookingsWithDates = useMemo(() => {
+    if (!activeWorkingPitchId || !pitchSlots[activeWorkingPitchId]) return [];
+    const list: { dateStr: string; slot: Slot }[] = [];
+    Object.entries(pitchSlots[activeWorkingPitchId]).forEach(([dateStr, slots]) => {
+      slots.filter(s => s.isBooked).forEach(slot => {
+        list.push({ dateStr, slot });
+      });
+    });
+    return list.sort((a, b) => b.dateStr.localeCompare(a.dateStr));
   }, [activeWorkingPitchId, pitchSlots]);
 
+  const revenueStats = useMemo(() => {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth(); // 0-indexed
+
+    let thisMonthTotal = 0;
+    let lastMonthTotal = 0;
+    let customTotal = 0;
+
+    allPitchBookingsWithDates.forEach(item => {
+      const itemDate = new Date(item.dateStr);
+      const y = itemDate.getFullYear();
+      const m = itemDate.getMonth();
+
+      if (y === curYear && m === curMonth) {
+        thisMonthTotal += item.slot.price;
+      }
+      
+      const lastMonthDate = new Date(curYear, curMonth - 1, 1);
+      if (y === lastMonthDate.getFullYear() && m === lastMonthDate.getMonth()) {
+        lastMonthTotal += item.slot.price;
+      }
+
+      if (customStartDate && customEndDate) {
+        if (item.dateStr >= customStartDate && item.dateStr <= customEndDate) {
+          customTotal += item.slot.price;
+        }
+      }
+    });
+
+    return {
+      daily: currentDayRevenue,
+      monthly: thisMonthTotal,
+      lastMonth: lastMonthTotal,
+      custom: customTotal
+    };
+  }, [allPitchBookingsWithDates, currentDayRevenue, customStartDate, customEndDate]);
+
   const whatsappRenewalUrl = `https://wa.me/964${OFFICIAL_PAYMENT_PHONE.replace(/^0/, '')}?text=${encodeURIComponent(
-    `مرحباً إدارة لعبتنا ⚽\nأنا صاحب ملعب (${currentOwnerPitch?.name || 'الملعب'}). تم تحويل مبلغ الاشتراك الشهري على رقم زين كاش (${OFFICIAL_PAYMENT_PHONE}).\nمرفق لكم لقطة شاشة التحويل 📸👇`
+    `مرحباً إدارة لعبتنا ⚽
+أنا صاحب ملعب (${currentOwnerPitch?.name || 'الملعب'}). تم تحويل مبلغ الاشتراك الشهري على رقم زين كاش (${OFFICIAL_PAYMENT_PHONE}).
+مرفق لكم لقطة شاشة التحويل 📸👇`
   )}`;
 
   const whatsappSupportUrl = `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(
-    `مرحباً الدعم الفني لمنصة لعبتنا ⚽\nأحتاج إلى مساعدة بخصوص المنظومة.`
+    `مرحباً الدعم الفني لمنصة لعبتنا ⚽
+أحتاج إلى مساعدة بخصوص المنظومة.`
   )}`;
 
   const handleSocialAuth = async (providerType: 'google' | 'apple') => {
@@ -354,14 +437,15 @@ export default function Home() {
       try {
         const provider = providerType === 'google' ? googleProvider : appleProvider;
         result = await signInWithPopup(auth, provider);
-      } catch (providerErr: any) {
-        if (providerType === 'apple' && (providerErr.code === 'auth/operation-not-allowed' || providerErr.code?.includes('unauthorized') || providerErr.code?.includes('configuration'))) {
-          setAuthError('تسجيل الدخول عبر Apple قيد الإعداد التقني من المتجر، يرجى المتابعة عبر حساب Google الآن.');
+      } catch (pErr: any) {
+        if (providerType === 'apple' && (pErr.code === 'auth/operation-not-allowed' || pErr.code?.includes('unauthorized') || pErr.code?.includes('configuration'))) {
+          setAuthError('تسجيل دخول Apple قيد استكمال اعتماده، يرجى المتابعة بنقرة واحدة عبر حساب Google الآن.');
           setAuthLoading(false);
           return;
         }
-        throw providerErr;
+        throw pErr;
       }
+
       const user = result.user;
       const uid = user.uid;
       const userName = user.displayName || (providerType === 'apple' ? 'مستخدم Apple' : 'مستخدم Google');
@@ -474,7 +558,8 @@ export default function Home() {
       subscriptionStatus: 'expired',
       subscriptionDaysLeft: 0,
       lastRenewDate: '-',
-      usedEmergencyExtension: false
+      usedEmergencyExtension: false,
+      dayWorkingHours: dayScheduleSettings
     };
 
     try {
@@ -601,6 +686,7 @@ export default function Home() {
     e.preventDefault();
     if (!currentOwnerPitch) return;
 
+    setSavingPitch(true);
     try {
       await updateDoc(doc(db, 'pitches', currentOwnerPitch.id), {
         name: editName,
@@ -608,12 +694,15 @@ export default function Home() {
         area: editArea,
         bio: editBio,
         imageUrl: editImage,
-        defaultPricePerHour: schedulePrice
+        defaultPricePerHour: schedulePrice,
+        dayWorkingHours: dayScheduleSettings
       });
       setProfileSavedToast(true);
       setTimeout(() => setProfileSavedToast(false), 3000);
     } catch (err: any) {
       alert('تعذر حفظ التعديلات: ' + err.message);
+    } finally {
+      setSavingPitch(false);
     }
   };
 
@@ -1014,34 +1103,65 @@ export default function Home() {
                         ownerTab === 'profile' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <Edit3 className="w-4 h-4" /> تعديل بيانات وصورة الملعب والمحافظة
+                      <Edit3 className="w-4 h-4" /> تعديل بيانات وصورة الملعب وساعات العمل
                     </button>
                   </div>
 
                   {ownerTab === 'bookings' && (
                     <div className="space-y-6">
+                      {/* لوحة الإيرادات وسجل الحسابات */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-400">إحصائيات الإيرادات</span>
+                            <span className="text-xs text-slate-400 font-bold flex items-center gap-1.5">
+                              <TrendingUp className="w-4 h-4 text-emerald-400" /> إحصائيات الإيرادات
+                            </span>
                             <div className="bg-slate-950 p-1 rounded-lg border border-slate-800 flex gap-1">
                               <button
                                 onClick={() => setRevenueFilter('daily')}
-                                className={`text-[10px] px-2 py-0.5 rounded font-bold ${revenueFilter === 'daily' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
+                                className={`text-[10px] px-2 py-0.5 rounded font-bold transition-all ${revenueFilter === 'daily' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
                               >
                                 اليوم
                               </button>
                               <button
                                 onClick={() => setRevenueFilter('monthly')}
-                                className={`text-[10px] px-2 py-0.5 rounded font-bold ${revenueFilter === 'monthly' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
+                                className={`text-[10px] px-2 py-0.5 rounded font-bold transition-all ${revenueFilter === 'monthly' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
                               >
-                                الشهر
+                                هذا الشهر
+                              </button>
+                              <button
+                                onClick={() => setRevenueFilter('last_month')}
+                                className={`text-[10px] px-2 py-0.5 rounded font-bold transition-all ${revenueFilter === 'last_month' ? 'bg-amber-600 text-slate-950' : 'text-slate-400'}`}
+                              >
+                                الشهر الماضي
                               </button>
                             </div>
                           </div>
-                          <p className="text-2xl font-black text-white mt-3">
-                            {revenueFilter === 'daily' ? `${currentDayRevenue.toLocaleString()} د.ع` : `${totalMonthlyRevenue.toLocaleString()} د.ع`}
-                          </p>
+
+                          <div>
+                            <p className="text-2xl font-black text-white">
+                              {revenueFilter === 'daily' && `${revenueStats.daily.toLocaleString()} د.ع`}
+                              {revenueFilter === 'monthly' && `${revenueStats.monthly.toLocaleString()} د.ع`}
+                              {revenueFilter === 'last_month' && `${revenueStats.lastMonth.toLocaleString()} د.ع`}
+                              {revenueFilter === 'custom' && `${revenueStats.custom.toLocaleString()} د.ع`}
+                            </p>
+                            <span className="text-[10px] text-slate-500 mt-0.5 block">
+                              {revenueFilter === 'daily' && 'إيراد المواعيد المحجوزة لليوم المختار'}
+                              {revenueFilter === 'monthly' && 'إجمالي حجوزات الشهر الحالي المعتمدة'}
+                              {revenueFilter === 'last_month' && 'إجمالي حجوزات الشهر السابق المؤرشفة'}
+                              {revenueFilter === 'custom' && `من ${customStartDate || '...'} إلى ${customEndDate || '...'}`}
+                            </span>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-850 flex items-center justify-between">
+                            <button
+                              onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
+                              className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1"
+                            >
+                              <CalendarRange className="w-3.5 h-3.5" />
+                              {showRevenueBreakdown ? 'إخفاء الفلترة المتقدمة' : 'فلترة حسب تاريخ مخصص'}
+                            </button>
+                          </div>
                         </div>
 
                         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
@@ -1049,6 +1169,9 @@ export default function Home() {
                           <p className="text-2xl font-black text-white mt-3">
                             {currentDayBookedCount} / {currentDaySlots.length}
                           </p>
+                          <span className="text-[10px] text-emerald-400 block mt-1">
+                            {currentDaySlots.length - currentDayBookedCount} ساعات متاحة للحجز اليوم
+                          </span>
                         </div>
 
                         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between">
@@ -1069,6 +1192,48 @@ export default function Home() {
                         </div>
                       </div>
 
+                      {/* لوحة الفلترة من تاريخ إلى تاريخ */}
+                      {showRevenueBreakdown && (
+                        <div className="bg-slate-900/90 border border-amber-500/40 p-5 rounded-2xl space-y-4">
+                          <h4 className="text-sm font-black text-amber-400 flex items-center gap-2">
+                            <CalendarRange className="w-4 h-4" /> كشف إيرادات الملعب من تاريخ إلى تاريخ
+                          </h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                            <div>
+                              <label className="text-xs text-slate-300 block mb-1">من تاريخ:</label>
+                              <input
+                                type="date"
+                                value={customStartDate}
+                                onChange={(e) => {
+                                  setCustomStartDate(e.target.value);
+                                  setRevenueFilter('custom');
+                                }}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-slate-300 block mb-1">إلى تاريخ:</label>
+                              <input
+                                type="date"
+                                value={customEndDate}
+                                onChange={(e) => {
+                                  setCustomEndDate(e.target.value);
+                                  setRevenueFilter('custom');
+                                }}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-white"
+                              />
+                            </div>
+                            <div className="flex flex-col justify-end">
+                              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-center">
+                                <span className="text-[11px] text-slate-400 block">مجموع إيراد الفترة المحددة</span>
+                                <span className="text-sm font-black text-emerald-400">{revenueStats.custom.toLocaleString()} د.ع</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* شريط اختيار الأيام */}
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
                         {dateOptions.map(date => (
                           <button
@@ -1084,6 +1249,7 @@ export default function Home() {
                         ))}
                       </div>
 
+                      {/* قائمة الحجوزات الصافية فقط */}
                       <div className="bg-slate-900/40 border border-slate-800 p-5 rounded-2xl">
                         <h4 className="font-bold text-sm text-white mb-4">جدول المواعيد: {selectedDate.dayName} ({selectedDate.dayNum} {selectedDate.monthName})</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -1147,12 +1313,12 @@ export default function Home() {
                     <form onSubmit={saveFullSettings} className="space-y-6 max-w-3xl">
                       {profileSavedToast && (
                         <div className="p-3 bg-emerald-950 border border-emerald-600 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات وصورة الملعب في السحابة بنجاح!
+                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات وساعات العمل في السحابة بنجاح!
                         </div>
                       )}
 
                       <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-5">
-                        <h4 className="font-bold text-white text-base">بيانات الملعب وصورته</h4>
+                        <h4 className="font-bold text-white text-base">بيانات الملعب الأساسية</h4>
 
                         <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
                           <label className="text-xs text-slate-300 block font-bold">صورة واجهة الملعب:</label>
@@ -1226,7 +1392,7 @@ export default function Home() {
                         </div>
 
                         <div className="pt-3 border-t border-slate-800">
-                          <label className="text-xs text-slate-300 block mb-1">سعر الساعة (د.ع):</label>
+                          <label className="text-xs text-slate-300 block mb-1">سعر الساعة الافتراضي (د.ع):</label>
                           <input
                             type="number"
                             value={schedulePrice}
@@ -1236,11 +1402,121 @@ export default function Home() {
                         </div>
                       </div>
 
+                      {/* منظومة تحديد ساعات العمل والـ 24 ساعة لكل يوم على حدة */}
+                      <div className="bg-slate-900 border border-amber-500/40 p-6 rounded-3xl space-y-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                          <div>
+                            <h4 className="text-base font-black text-amber-400 flex items-center gap-2">
+                              ⏰ إعدادات ساعات الدوام والـ 24 ساعة
+                            </h4>
+                            <p className="text-xs text-slate-400 mt-1">
+                              حدد ساعات العمل لكل يوم بشكل منفصل (مثلاً السبت ساعتين فقط، وباقي الأيام 24 ساعة)
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDayScheduleSettings(prev => ({
+                                  ...prev,
+                                  [activeConfigDay]: Array.from({ length: 24 }, (_, i) => i)
+                                }));
+                              }}
+                              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black transition-all shadow-md"
+                            >
+                              ⚡ فتح 24 ساعة ليوم ({activeConfigDay})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentDayHours = dayScheduleSettings[activeConfigDay] || [16, 17, 18, 19, 20, 21, 22, 23, 0];
+                                const updated: Record<string, number[]> = {};
+                                WEEK_DAYS.forEach(d => { updated[d] = [...currentDayHours]; });
+                                setDayScheduleSettings(updated);
+                                alert(`تم تطبيق ساعات يوم (${activeConfigDay}) على جميع أيام الأسبوع بنجاح!`);
+                              }}
+                              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 rounded-xl text-xs font-bold transition-all"
+                            >
+                              تطبيق على كل أيام الأسبوع
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* اختيار اليوم للتعديل */}
+                        <div>
+                          <label className="text-xs text-slate-300 block mb-2 font-bold">اختر اليوم لتحديد أوقات عمله:</label>
+                          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                            {WEEK_DAYS.map(day => (
+                              <button
+                                key={day}
+                                type="button"
+                                onClick={() => setActiveConfigDay(day)}
+                                className={`py-2 px-1 rounded-xl text-xs font-bold border transition-all ${
+                                  activeConfigDay === day
+                                    ? 'bg-amber-600 text-slate-950 border-amber-400 font-black shadow-lg scale-102'
+                                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                                }`}
+                              >
+                                {day}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* قائمة الـ 24 ساعة كاملة بالنقرة */}
+                        <div className="pt-2">
+                          <div className="flex justify-between items-center mb-2.5">
+                            <span className="text-xs text-slate-300 font-bold">
+                              ساعات يوم ({activeConfigDay}) النشطة: {(dayScheduleSettings[activeConfigDay] || []).length} ساعة من 24
+                            </span>
+                            <span className="text-[11px] text-slate-500 font-mono">اضغط على الساعة للتشغيل أو الإيقاف</span>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                            {MASTER_24_HOURS.map(hObj => {
+                              const activeHours = dayScheduleSettings[activeConfigDay] || [];
+                              const isSelected = activeHours.includes(hObj.h);
+                              return (
+                                <button
+                                  key={hObj.h}
+                                  type="button"
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      if (activeHours.length > 1) {
+                                        setDayScheduleSettings(prev => ({
+                                          ...prev,
+                                          [activeConfigDay]: activeHours.filter(h => h !== hObj.h)
+                                        }));
+                                      }
+                                    } else {
+                                      setDayScheduleSettings(prev => ({
+                                        ...prev,
+                                        [activeConfigDay]: [...activeHours, hObj.h].sort((a, b) => a - b)
+                                      }));
+                                    }
+                                  }}
+                                  className={`py-2 px-1.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
+                                    isSelected
+                                      ? 'bg-emerald-600 text-white border-emerald-400 shadow-sm'
+                                      : 'bg-slate-900 text-slate-500 border-slate-800 hover:border-slate-700 hover:text-slate-300'
+                                  }`}
+                                >
+                                  <span className="text-[11px] font-bold">{hObj.label.split('-')[0].trim()}</span>
+                                  <span className="text-[9px] opacity-75">{isSelected ? 'متاح للحجز' : 'مغلق'}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
                       <button
                         type="submit"
-                        className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-3 rounded-xl text-xs transition-all shadow-lg"
+                        disabled={savingPitch}
+                        className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-3.5 rounded-xl text-xs transition-all shadow-lg"
                       >
-                        حفظ التعديلات في السحابة
+                        {savingPitch ? 'جارٍ الحفظ في السحابة...' : 'حفظ التعديلات وساعات العمل في السحابة'}
                       </button>
                     </form>
                   )}
