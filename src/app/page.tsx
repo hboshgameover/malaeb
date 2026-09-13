@@ -1134,7 +1134,11 @@ export default function Home() {
                                       setSelectedHours24([...selectedHours24, hObj.h].sort((a, b) => a - b));
                                     }
                                   }}
-                                  className={}
+                                  className={`text-[10px] py-1.5 px-1 rounded-lg font-bold border transition-all text-center ${
+                                    isActive
+                                      ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
+                                      : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+                                  }`}
                                 >
                                   {hObj.label.split('-')[0].trim()}
                                 </button>
