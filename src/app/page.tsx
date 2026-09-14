@@ -63,6 +63,7 @@ interface Slot {
   bookedBy?: string;
   phone?: string;
   price: number;
+  isRecurring?: boolean;
 }
 
 interface PlayerAccount {
@@ -210,6 +211,8 @@ export default function Home() {
   const [ownerManualSlot, setOwnerManualSlot] = useState<Slot | null>(null);
   const [ownerTeamName, setOwnerTeamName] = useState('');
   const [ownerTeamPhone, setOwnerTeamPhone] = useState('');
+  const [isRecurringBooking, setIsRecurringBooking] = useState(false);
+  const [cancelAllRecurring, setCancelAllRecurring] = useState(false);
 
   const [viewDetailsSlot, setViewDetailsSlot] = useState<Slot | null>(null);
   const [slotToConfirmCancel, setSlotToConfirmCancel] = useState<Slot | null>(null);
@@ -263,7 +266,8 @@ export default function Home() {
           isBooked: data.isBooked,
           bookedBy: data.bookedBy,
           phone: data.phone,
-          price: data.price
+          price: data.price,
+          isRecurring: data.isRecurring || false
         });
       });
       setPitchSlots(slotsMap);
@@ -626,25 +630,49 @@ export default function Home() {
   const handleOwnerManualBookingSubmit = async () => {
     if (!ownerManualSlot || !ownerTeamName || ownerTeamPhone.length !== 11 || !currentOwnerPitch) return;
 
-    const bookingDocId = `${currentOwnerPitch.id}_${selectedDate.dateStr}_${ownerManualSlot.hourNumber}`;
-    const bookingData = {
-      id: ownerManualSlot.id,
-      pitchId: currentOwnerPitch.id,
-      dateStr: selectedDate.dateStr,
-      hourNumber: ownerManualSlot.hourNumber,
-      time: ownerManualSlot.time,
-      price: ownerManualSlot.price,
-      isBooked: true,
-      bookedBy: ownerTeamName,
-      phone: ownerTeamPhone,
-      timestamp: Date.now()
-    };
-
     try {
-      await setDoc(doc(db, 'bookings', bookingDocId), bookingData);
+      if (isRecurringBooking) {
+        // حجز ثابت لجميع الأيام المتطابقة عبر كل الأسابيع القادمة
+        const targetDayName = selectedDate.dayName;
+        const matchingDates = dateOptions.filter(d => d.dayName === targetDayName);
+        
+        for (const targetDate of matchingDates) {
+          const docId = `${currentOwnerPitch.id}_${targetDate.dateStr}_${ownerManualSlot.hourNumber}`;
+          await setDoc(doc(db, 'bookings', docId), {
+            id: `${targetDate.dateStr}-${ownerManualSlot.hourNumber}`,
+            pitchId: currentOwnerPitch.id,
+            dateStr: targetDate.dateStr,
+            hourNumber: ownerManualSlot.hourNumber,
+            time: ownerManualSlot.time,
+            price: ownerManualSlot.price,
+            isBooked: true,
+            isRecurring: true,
+            bookedBy: `${ownerTeamName} (ثابت)`,
+            phone: ownerTeamPhone,
+            timestamp: Date.now()
+          });
+        }
+      } else {
+        const bookingDocId = `${currentOwnerPitch.id}_${selectedDate.dateStr}_${ownerManualSlot.hourNumber}`;
+        await setDoc(doc(db, 'bookings', bookingDocId), {
+          id: ownerManualSlot.id,
+          pitchId: currentOwnerPitch.id,
+          dateStr: selectedDate.dateStr,
+          hourNumber: ownerManualSlot.hourNumber,
+          time: ownerManualSlot.time,
+          price: ownerManualSlot.price,
+          isBooked: true,
+          isRecurring: false,
+          bookedBy: ownerTeamName,
+          phone: ownerTeamPhone,
+          timestamp: Date.now()
+        });
+      }
+
       setOwnerManualSlot(null);
       setOwnerTeamName('');
       setOwnerTeamPhone('');
+      setIsRecurringBooking(false);
     } catch (err: any) {
       alert('تعذر تثبيت الحجز: ' + err.message);
     }
@@ -1237,11 +1265,18 @@ export default function Home() {
                             >
                               <div className="flex justify-between items-center">
                                 <span className="text-sm font-black text-white">{slot.time}</span>
-                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${
-                                  slot.isBooked ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-400'
-                                }`}>
-                                  {slot.isBooked ? 'محجوزة' : 'متاحة'}
-                                </span>
+                                <div className="flex items-center gap-1">
+                                  {slot.isRecurring && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-md font-black bg-amber-950 border border-amber-600/80 text-amber-300 flex items-center gap-1">
+                                      ثابت 🔁
+                                    </span>
+                                  )}
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${
+                                    slot.isBooked ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-400'
+                                  }`}>
+                                    {slot.isBooked ? 'محجوزة' : 'متاحة'}
+                                  </span>
+                                </div>
                               </div>
 
                               {slot.isBooked ? (
@@ -1994,6 +2029,20 @@ export default function Home() {
                 placeholder="رقم الهاتف (07XXXXXXXXX)"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white font-mono"
               />
+
+              <label className="flex items-center gap-2.5 bg-slate-950 p-3 rounded-xl border border-amber-500/40 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isRecurringBooking}
+                  onChange={(e) => setIsRecurringBooking(e.target.checked)}
+                  className="w-4 h-4 rounded text-amber-500 bg-slate-900 border-slate-700"
+                />
+                <div className="text-right">
+                  <span className="text-xs font-black text-amber-300 block">🔁 تثبيت كحجز أسبوعي دوري (حجز ثابت)</span>
+                  <span className="text-[10px] text-slate-400 block">قفل نفس الساعة تلقائياً كل يوم ({selectedDate.dayName}) في جميع الأسابيع القادمة</span>
+                </div>
+              </label>
+
               <button
                 onClick={handleOwnerManualBookingSubmit}
                 className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-2.5 rounded-xl text-xs shadow-md"
