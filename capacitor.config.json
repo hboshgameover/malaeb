@@ -1,0 +1,10 @@
+{
+  "appId": "iq.la3batna.app",
+  "appName": "لعبتنا",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://la3batna-one.vercel.app",
+    "cleartext": true
+  }
+}

@@ -31,11 +31,14 @@ import {
   CalendarRange,
   TrendingUp,
   Settings,
-  Navigation
+  Navigation,
+  Download,
+  Smartphone,
+  Share2
 } from 'lucide-react';
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -148,6 +151,9 @@ export default function Home() {
   const [selectedProvinceFilter, setSelectedProvinceFilter] = useState<string>('الكل');
   const [activePortal, setActivePortal] = useState<'player' | 'owner'>('player');
 
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [installDeviceType, setInstallDeviceType] = useState<'android' | 'ios'>('android');
+
   const [showPlayerProfileSetup, setShowPlayerProfileSetup] = useState(false);
   const [playerTempAuth, setPlayerTempAuth] = useState<{ uid: string; name: string; email: string } | null>(null);
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -172,10 +178,8 @@ export default function Home() {
   const [showEditPlayerModal, setShowEditPlayerModal] = useState(false);
   const [tempPlayerName, setTempPlayerName] = useState('');
 
-  // 3 تبويبات لصاحب الملعب
   const [ownerTab, setOwnerTab] = useState<'bookings' | 'schedule' | 'profile'>('bookings');
   
-  // بيانات البروفايل
   const [editName, setEditName] = useState('');
   const [editProvince, setEditProvince] = useState('بغداد');
   const [editArea, setEditArea] = useState('');
@@ -185,7 +189,6 @@ export default function Home() {
   const [profileSavedToast, setProfileSavedToast] = useState(false);
   const [savingPitch, setSavingPitch] = useState(false);
 
-  // إعداد ساعات العمل
   const [activeConfigDay, setActiveConfigDay] = useState<string>('السبت');
   const [dayScheduleSettings, setDayScheduleSettings] = useState<Record<string, number[]>>({
     'السبت': [16, 17, 18, 19, 20, 21, 22, 23, 0],
@@ -214,7 +217,6 @@ export default function Home() {
 
   const [schedulePrice, setSchedulePrice] = useState(20000);
   
-  // فلترة سجل الإيرادات
   const [revenueFilter, setRevenueFilter] = useState<'daily' | 'monthly' | 'last_month' | 'custom'>('daily');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
@@ -227,7 +229,13 @@ export default function Home() {
       if (savedUser) setCurrentUser(JSON.parse(savedUser));
     } catch {}
 
-    // جلب الملاعب بدون إعادة توليد ملعب وهمي إذا تم الحذف
+    if (typeof window !== 'undefined') {
+      const ua = navigator.userAgent || '';
+      if (/iPad|iPhone|iPod/.test(ua)) {
+        setInstallDeviceType('ios');
+      }
+    }
+
     const unsubPitches = onSnapshot(collection(db, 'pitches'), (snapshot) => {
       const loaded: Pitch[] = [];
       snapshot.forEach((doc) => loaded.push(doc.data() as Pitch));
@@ -711,7 +719,6 @@ export default function Home() {
 
   if (!isClient) return null;
 
-  // إخفاء الملاعب المعطلة فوراً عن اللاعبين
   const displayedPitches = pitchesList.filter(p => {
     const isActive = p.subscriptionStatus === 'active' && (p.subscriptionDaysLeft > 0);
     const matchesProvince = selectedProvinceFilter === 'الكل' || p.city === selectedProvinceFilter;
@@ -743,35 +750,45 @@ export default function Home() {
             </div>
           </div>
 
-          {currentUser.role !== 'guest' && (
-            <div className="flex items-center gap-3">
-              <div className="text-left">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-white block">{currentUser.name}</span>
-                  {currentUser.role === 'player' && (
-                    <button
-                      onClick={() => {
-                        setTempPlayerName(currentUser.name || '');
-                        setShowEditPlayerModal(true);
-                      }}
-                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-400 px-2 py-0.5 rounded-lg border border-slate-700"
-                    >
-                      تعديل الاسم ✏️
-                    </button>
-                  )}
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setShowInstallModal(true)}
+              className="flex items-center gap-1.5 bg-emerald-600/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95"
+            >
+              <Download className="w-4 h-4 text-emerald-400 animate-bounce" />
+              <span>تثبيت التطبيق 📲</span>
+            </button>
+
+            {currentUser.role !== 'guest' && (
+              <div className="flex items-center gap-3">
+                <div className="text-left">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-white block">{currentUser.name}</span>
+                    {currentUser.role === 'player' && (
+                      <button
+                        onClick={() => {
+                          setTempPlayerName(currentUser.name || '');
+                          setShowEditPlayerModal(true);
+                        }}
+                        className="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-400 px-2 py-0.5 rounded-lg border border-slate-700"
+                      >
+                        تعديل الاسم ✏️
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-emerald-400 block font-mono">
+                    {currentUser.role === 'player' ? `حساب كابتن (${currentUser.phone || ''})` : currentUser.role === 'owner' ? `لوحة الملعب (${currentUser.phone})` : 'الإدارة العامة'}
+                  </span>
                 </div>
-                <span className="text-[10px] text-emerald-400 block font-mono">
-                  {currentUser.role === 'player' ? `حساب كابتن (${currentUser.phone || ''})` : currentUser.role === 'owner' ? `لوحة الملعب (${currentUser.phone})` : 'الإدارة العامة'}
-                </span>
+                <button
+                  onClick={() => setShowLogoutConfirm(true)}
+                  className="p-2 bg-slate-900 hover:bg-rose-950/60 border border-slate-800 text-slate-400 hover:text-rose-400 rounded-xl transition-all"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                onClick={() => setShowLogoutConfirm(true)}
-                className="p-2 bg-slate-900 hover:bg-rose-950/60 border border-slate-800 text-slate-400 hover:text-rose-400 rounded-xl transition-all"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+            )}
+          </div>
         </header>
 
         <main className="max-w-5xl mx-auto mt-6">
@@ -1040,7 +1057,6 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {/* شريط التبويبات الثلاثة لصاحب الملعب */}
                   <div className="flex border-b border-slate-800 gap-4 overflow-x-auto pb-1 scrollbar-thin">
                     <button
                       onClick={() => setOwnerTab('bookings')}
@@ -1070,7 +1086,6 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {/* تبويب الحجوزات والمالية */}
                   {ownerTab === 'bookings' && (
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1116,7 +1131,7 @@ export default function Home() {
                             </span>
                           </div>
 
-                          <div className="pt-2 border-t border-slate-850">
+                          <div className="pt-2 border-t border-slate-855">
                             <button
                               onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
                               className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1"
@@ -1195,7 +1210,6 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* شريط الأيام */}
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
                         {dateOptions.map(date => (
                           <button
@@ -1211,7 +1225,6 @@ export default function Home() {
                         ))}
                       </div>
 
-                      {/* قائمة الحجوزات */}
                       <div className="bg-slate-900/40 border border-slate-800 p-5 rounded-2xl">
                         <h4 className="font-bold text-sm text-white mb-4">جدول المواعيد: {selectedDate.dayName} ({selectedDate.dayNum} {selectedDate.monthName})</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -1271,7 +1284,6 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* تبويب إعدادات الدوام والـ 24 ساعة المنفصل */}
                   {ownerTab === 'schedule' && (
                     <div className="bg-slate-900 border border-amber-500/40 p-6 rounded-3xl space-y-6 max-w-4xl">
                       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
@@ -1313,7 +1325,6 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* أزرار الأيام */}
                       <div>
                         <label className="text-xs text-slate-300 block mb-2 font-bold">حدد اليوم المراد تعديل ساعاته:</label>
                         <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
@@ -1334,7 +1345,6 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* الـ 24 ساعة كاملة */}
                       <div>
                         <div className="flex justify-between items-center mb-2.5">
                           <span className="text-xs text-slate-300 font-bold">
@@ -1391,7 +1401,6 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* تبويب البروفايل وموقع Google Maps */}
                   {ownerTab === 'profile' && (
                     <form onSubmit={saveProfileSettings} className="space-y-6 max-w-3xl">
                       {profileSavedToast && (
@@ -1465,7 +1474,6 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* حقل رابط خرائط Google Maps */}
                         <div className="bg-slate-950 p-4 rounded-2xl border border-emerald-900/50 space-y-2">
                           <label className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
                             <Navigation className="w-4 h-4" /> رابط موقع الملعب على خرائط Google (Google Maps):
@@ -1809,6 +1817,106 @@ export default function Home() {
           <Lock className="w-3 h-3" /> بوابة الإدارة (Master Access)
         </button>
       </footer>
+
+      {showInstallModal && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-5 text-right">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-white">
+                <Smartphone className="w-5 h-5 text-emerald-400" />
+                <h4 className="font-black text-sm md:text-base">تثبيت تطبيق لعبتنا على هاتفك</h4>
+              </div>
+              <button 
+                onClick={() => setShowInstallModal(false)} 
+                className="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-950 border border-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950 p-1.5 rounded-2xl border border-slate-800 grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setInstallDeviceType('android')}
+                className={`py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                  installDeviceType === 'android' ? 'bg-emerald-600 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📱 هواتف أندرويد (Android)
+              </button>
+              <button
+                type="button"
+                onClick={() => setInstallDeviceType('ios')}
+                className={`py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                  installDeviceType === 'ios' ? 'bg-emerald-600 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🍏 هواتف آيفون (iPhone)
+              </button>
+            </div>
+
+            {installDeviceType === 'android' && (
+              <div className="space-y-4 bg-slate-950 p-4 rounded-2xl border border-emerald-950">
+                <div className="space-y-1">
+                  <h5 className="font-bold text-white text-xs">تحميل تطبيق الأندرويد الرسمي (APK)</h5>
+                  <p className="text-[11px] text-slate-400">حجم خفيف وتثبيت سريع ومباشر على جهازك دون الحاجة للمتجر.</p>
+                </div>
+
+                <a
+                  href="/la3batna.apk"
+                  download="la3batna.apk"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3.5 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98"
+                >
+                  <Download className="w-4 h-4" /> تحميل التطبيق الآن (APK مباشر)
+                </a>
+
+                <div className="text-[10px] text-slate-500 space-y-1 bg-slate-900/60 p-2.5 rounded-xl border border-slate-850">
+                  <p>💡 <b>طريقة التثبيت:</b> بعد انتهاء التحميل، افتح الملف واضغط <b>تثبيت (Install)</b>. إذا ظهر لك تنبيه، اختر السماح بالتثبيت من هذا المصدر.</p>
+                </div>
+              </div>
+            )}
+
+            {installDeviceType === 'ios' && (
+              <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-emerald-950">
+                <div className="space-y-1">
+                  <h5 className="font-bold text-white text-xs">تثبيت التطبيق على هواتف آبل والآيفون</h5>
+                  <p className="text-[11px] text-slate-400">اتبع الخطوات البسيطة التالية عبر متصفح Safari:</p>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-start gap-2.5 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0">1</span>
+                    <p className="text-slate-200 text-[11px]">
+                      اضغط على زر المشاركة <b>(Share ⎋)</b> الموجود في أسفل شاشة المتصفح.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0">2</span>
+                    <p className="text-slate-200 text-[11px]">
+                      مرر القائمة للأسفل واضغط على <b>"إضافة إلى الشاشة الرئيسية" (Add to Home Screen)</b>.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0">3</span>
+                    <p className="text-slate-200 text-[11px]">
+                      اضغط على كلمة <b>"إضافة" (Add)</b> في أعلى الزاوية، وسيثبت التطبيق بأيقونته الرسمية على شاشتك فوراً!
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowInstallModal(false)}
+              className="w-full bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold py-2 rounded-xl text-xs transition-all"
+            >
+              إغلاق
+            </button>
+          </div>
+        </div>
+      )}
 
       {selectedSlot && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
