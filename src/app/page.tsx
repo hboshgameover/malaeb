@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
+  Search,
   Calendar as CalendarIcon, 
   Clock, 
   Phone, 
@@ -33,8 +34,7 @@ import {
   Settings,
   Navigation,
   Download,
-  Smartphone,
-  Share2
+  Smartphone
 } from 'lucide-react';
 
 import { initializeApp, getApps, getApp } from "firebase/app";
@@ -150,6 +150,7 @@ export default function Home() {
   const [playersList, setPlayersList] = useState<PlayerAccount[]>([]);
 
   const [selectedProvinceFilter, setSelectedProvinceFilter] = useState<string>('الكل');
+  const [searchQuery, setSearchQuery] = useState('');
   const [activePortal, setActivePortal] = useState<'player' | 'owner'>('player');
 
   const [showInstallModal, setShowInstallModal] = useState(false);
@@ -212,7 +213,6 @@ export default function Home() {
   const [ownerTeamName, setOwnerTeamName] = useState('');
   const [ownerTeamPhone, setOwnerTeamPhone] = useState('');
   const [isRecurringBooking, setIsRecurringBooking] = useState(false);
-  const [cancelAllRecurring, setCancelAllRecurring] = useState(false);
 
   const [viewDetailsSlot, setViewDetailsSlot] = useState<Slot | null>(null);
   const [slotToConfirmCancel, setSlotToConfirmCancel] = useState<Slot | null>(null);
@@ -224,6 +224,27 @@ export default function Home() {
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [showRevenueBreakdown, setShowRevenueBreakdown] = useState(false);
+
+  const calculateDaysLeft = (pitch: Pitch): number => {
+    if (pitch.subscriptionStatus !== 'active') return 0;
+    if (!pitch.lastRenewDate || pitch.lastRenewDate === '-') return 0;
+    try {
+      const parts = pitch.lastRenewDate.split('-');
+      if (parts.length !== 3) return pitch.subscriptionDaysLeft || 0;
+      const renew = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const today = new Date();
+      renew.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+
+      const diffTime = today.getTime() - renew.getTime();
+      const daysPassed = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      const totalGranted = (pitch.subscriptionDaysLeft && pitch.subscriptionDaysLeft > 0) ? pitch.subscriptionDaysLeft : 30;
+      const remaining = totalGranted - (daysPassed > 0 ? daysPassed : 0);
+      return remaining > 0 ? remaining : 0;
+    } catch {
+      return pitch.subscriptionDaysLeft || 0;
+    }
+  };
 
   useEffect(() => {
     setIsClient(true);
@@ -292,12 +313,15 @@ export default function Home() {
     for (let i = 0; i < 14; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
       days.push({
         index: i,
         dayName: arabicDays[d.getDay()],
         dayNum: d.getDate(),
         monthName: arabicMonths[d.getMonth()],
-        dateStr: d.toISOString().split('T')[0]
+        dateStr: `${yyyy}-${mm}-${dd}`
       });
     }
     return days;
@@ -344,7 +368,8 @@ export default function Home() {
         hourNumber: h,
         time: found.label,
         isBooked: false,
-        price
+        price,
+        isRecurring: false
       };
     });
   };
@@ -415,14 +440,11 @@ export default function Home() {
   }, [allPitchBookingsWithDates, currentDayRevenue, customStartDate, customEndDate]);
 
   const whatsappRenewalUrl = `https://wa.me/964${OFFICIAL_PAYMENT_PHONE.replace(/^0/, '')}?text=${encodeURIComponent(
-    `مرحباً إدارة لعبتنا ⚽
-أنا صاحب ملعب (${currentOwnerPitch?.name || 'الملعب'}). تم تحويل مبلغ الاشتراك الشهري على رقم زين كاش (${OFFICIAL_PAYMENT_PHONE}).
-مرفق لكم لقطة شاشة التحويل 📸👇`
+    `مرحباً إدارة لعبتنا ⚽\nأنا صاحب ملعب (${currentOwnerPitch?.name || 'الملعب'}). تم تحويل مبلغ الاشتراك الشهري على رقم زين كاش (${OFFICIAL_PAYMENT_PHONE}).\nمرفق لكم لقطة شاشة التحويل 📸👇`
   )}`;
 
   const whatsappSupportUrl = `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(
-    `مرحباً الدعم الفني لمنصة لعبتنا ⚽
-أحتاج إلى مساعدة بخصوص المنظومة.`
+    `مرحباً الدعم الفني لمنصة لعبتنا ⚽\nأحتاج إلى مساعدة بخصوص المنظومة.`
   )}`;
 
   const handleSocialAuth = async () => {
@@ -581,9 +603,11 @@ export default function Home() {
   const handleActivateEmergencyExtension = async () => {
     if (!currentOwnerPitch) return;
     try {
+      const todayStr = new Date().toISOString().split('T')[0];
       await updateDoc(doc(db, 'pitches', currentOwnerPitch.id), {
         subscriptionStatus: 'active',
         subscriptionDaysLeft: 1,
+        lastRenewDate: todayStr,
         usedEmergencyExtension: true
       });
     } catch (e) {
@@ -614,6 +638,7 @@ export default function Home() {
       time: selectedSlot.time,
       price: selectedSlot.price,
       isBooked: true,
+      isRecurring: false,
       bookedBy: bookingCaptainName,
       phone: bookingCaptainPhone,
       timestamp: Date.now()
@@ -632,7 +657,6 @@ export default function Home() {
 
     try {
       if (isRecurringBooking) {
-        // حجز ثابت لجميع الأيام المتطابقة عبر كل الأسابيع القادمة
         const targetDayName = selectedDate.dayName;
         const matchingDates = dateOptions.filter(d => d.dayName === targetDayName);
         
@@ -647,7 +671,7 @@ export default function Home() {
             price: ownerManualSlot.price,
             isBooked: true,
             isRecurring: true,
-            bookedBy: `${ownerTeamName} (ثابت)`,
+            bookedBy: `${ownerTeamName} (حجز ثابت)`,
             phone: ownerTeamPhone,
             timestamp: Date.now()
           });
@@ -748,10 +772,18 @@ export default function Home() {
   if (!isClient) return null;
 
   const displayedPitches = pitchesList.filter(p => {
-    const isActive = p.subscriptionStatus === 'active' && (p.subscriptionDaysLeft > 0);
+    const daysLeft = calculateDaysLeft(p);
+    const isActive = p.subscriptionStatus === 'active' && daysLeft > 0;
     const matchesProvince = selectedProvinceFilter === 'الكل' || p.city === selectedProvinceFilter;
-    return isActive && matchesProvince;
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch = query === '' || 
+      p.name.toLowerCase().includes(query) || 
+      p.area.toLowerCase().includes(query) ||
+      p.city.toLowerCase().includes(query);
+    return isActive && matchesProvince && matchesSearch;
   });
+
+  const isOwnerActive = currentOwnerPitch ? (currentOwnerPitch.subscriptionStatus === 'active' && calculateDaysLeft(currentOwnerPitch) > 0) : false;
 
   return (
     <div dir="rtl" className="min-h-screen bg-slate-950 text-slate-100 font-sans p-3 md:p-8 flex flex-col justify-between relative">
@@ -1035,7 +1067,7 @@ export default function Home() {
 
           {currentUser.role === 'owner' && currentOwnerPitch && (
             <div>
-              {currentOwnerPitch.subscriptionStatus === 'expired' ? (
+              {!isOwnerActive ? (
                 <div className="bg-slate-900 border border-rose-900/80 rounded-3xl p-6 md:p-10 max-w-2xl mx-auto my-8 text-center shadow-2xl space-y-6">
                   <div className="w-16 h-16 bg-rose-950/80 border border-rose-800 rounded-2xl flex items-center justify-center mx-auto text-rose-400">
                     <Lock className="w-8 h-8" />
@@ -1159,7 +1191,7 @@ export default function Home() {
                             </span>
                           </div>
 
-                          <div className="pt-2 border-t border-slate-855">
+                          <div className="pt-2 border-t border-slate-850">
                             <button
                               onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
                               className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1"
@@ -1182,9 +1214,9 @@ export default function Home() {
 
                         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between">
                           <div>
-                            <span className="text-xs text-slate-400">صلاحية الاشتراك</span>
+                            <span className="text-xs text-slate-400">صلاحية الاشتراك الحالية:</span>
                             <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-bold mr-2">
-                              نشط ({currentOwnerPitch.subscriptionDaysLeft} يوم)
+                              نشط ({calculateDaysLeft(currentOwnerPitch)} يوم متبقٍ)
                             </span>
                           </div>
                           <a
@@ -1265,9 +1297,9 @@ export default function Home() {
                             >
                               <div className="flex justify-between items-center">
                                 <span className="text-sm font-black text-white">{slot.time}</span>
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1.5">
                                   {slot.isRecurring && (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-md font-black bg-amber-950 border border-amber-600/80 text-amber-300 flex items-center gap-1">
+                                    <span className="text-[10px] px-2 py-0.5 rounded-md font-black bg-amber-950 border border-amber-500/70 text-amber-300 flex items-center gap-1">
                                       ثابت 🔁
                                     </span>
                                   )}
@@ -1306,10 +1338,11 @@ export default function Home() {
                                     setOwnerManualSlot(slot);
                                     setOwnerTeamName('');
                                     setOwnerTeamPhone('');
+                                    setIsRecurringBooking(false);
                                   }}
                                   className="w-full py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-slate-950 flex items-center justify-center gap-1.5"
                                 >
-                                  <UserPlus className="w-3.5 h-3.5" /> تسجيل حجز هاتفي
+                                  <UserPlus className="w-3.5 h-3.5" /> تسجيل حجز يدوي
                                 </button>
                               )}
                             </div>
@@ -1327,7 +1360,7 @@ export default function Home() {
                             ⏰ إعداد ساعات الدوام الأسبوعية ونظام 24 ساعة
                           </h4>
                           <p className="text-xs text-slate-400 mt-1">
-                            خصص ساعات العمل لكل يوم بشكل مستقل (مثال: السبت ساعتين، وباقي الأيام 24 ساعة مفتوحة)
+                            خصص ساعات العمل لكل يوم بشكل مستقل أو فعّل نظام 24 ساعة
                           </p>
                         </div>
 
@@ -1517,12 +1550,9 @@ export default function Home() {
                             type="url"
                             value={editGoogleMapsUrl}
                             onChange={(e) => setEditGoogleMapsUrl(e.target.value)}
-                            placeholder="مثال: https://maps.app.goo.gl/XXXXXXX أو رابط الموقع المباشر"
+                            placeholder="مثال: https://maps.app.goo.gl/XXXXXXX"
                             className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white font-mono outline-none focus:border-emerald-500"
                           />
-                          <p className="text-[10px] text-slate-400">
-                            * افتح تطبيق Google Maps عند ملعبك، اضغط (مشاركة أو Share)، وانسخ الرابط والصقه هنا ليتمكن اللاعبون من الوصول للملعب بالـ GPS بنقرة واحدة.
-                          </p>
                         </div>
 
                         <div>
@@ -1563,11 +1593,30 @@ export default function Home() {
             <div>
               {!selectedPitchId ? (
                 <div className="space-y-6">
-                  <div className="text-center py-4 max-w-xl mx-auto space-y-2">
+                  <div className="text-center py-4 max-w-xl mx-auto space-y-3">
                     <h2 className="text-2xl font-black text-white">الملاعب الرياضية المتاحة</h2>
-                    <p className="text-xs text-slate-400">اختر محافظتك وتصفح الملاعب المجهزة بالكامل</p>
+                    <p className="text-xs text-slate-400">احجز ملعبك المفضل مباشرة وتصفح المواعيد المتاحة</p>
 
-                    <div className="flex items-center justify-center gap-1.5 flex-wrap pt-3">
+                    <div className="relative max-w-md mx-auto pt-2">
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="🔍 ابحث باسم الملعب، المنطقة أو المحافظة..."
+                        className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 rounded-2xl py-3 pr-10 pl-10 text-xs text-white placeholder-slate-500 outline-none shadow-inner transition-all"
+                      />
+                      <Search className="w-4 h-4 text-emerald-400 absolute right-3.5 top-5" />
+                      {searchQuery && (
+                        <button
+                          onClick={() => setSearchQuery('')}
+                          className="absolute left-3.5 top-5 text-slate-400 hover:text-white"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-center gap-1.5 flex-wrap pt-2">
                       <button
                         onClick={() => setSelectedProvinceFilter('الكل')}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
@@ -1603,8 +1652,8 @@ export default function Home() {
                   {displayedPitches.length === 0 ? (
                     <div className="bg-slate-900 border border-slate-800 p-10 rounded-3xl text-center space-y-3 max-w-md mx-auto">
                       <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
-                      <h4 className="font-bold text-white text-base">لا توجد ملاعب نشطة حالياً في {selectedProvinceFilter}</h4>
-                      <p className="text-xs text-slate-400">يرجى تجربة محافظة أخرى أو تصفح كل العراق.</p>
+                      <h4 className="font-bold text-white text-base">لا توجد نتائج تطابق بحثك</h4>
+                      <p className="text-xs text-slate-400">تأكد من كتابة الاسم بصورة صحيحة أو اختر محافظة أخرى.</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1750,7 +1799,7 @@ export default function Home() {
                   <div>
                     <span className="text-xs text-slate-400 block">الملاعب النشطة حالياً</span>
                     <span className="text-2xl font-black text-emerald-400">
-                      {pitchesList.filter(p => p.subscriptionStatus === 'active' && p.subscriptionDaysLeft > 0).length} نشط
+                      {pitchesList.filter(p => p.subscriptionStatus === 'active' && calculateDaysLeft(p) > 0).length} نشط
                     </span>
                   </div>
                 </div>
@@ -1761,76 +1810,81 @@ export default function Home() {
                 {pitchesList.length === 0 ? (
                   <p className="text-xs text-slate-500 text-center py-6">لا توجد ملاعب في النظام حالياً.</p>
                 ) : (
-                  pitchesList.map(p => (
-                    <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
-                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
-                        <div>
-                          <h4 className="font-bold text-white text-base">{p.name}</h4>
-                          <p className="text-xs text-slate-400 mt-0.5">{p.city} - {p.area}</p>
+                  pitchesList.map(p => {
+                    const daysLeft = calculateDaysLeft(p);
+                    const isActive = p.subscriptionStatus === 'active' && daysLeft > 0;
+                    return (
+                      <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
+                          <div>
+                            <h4 className="font-bold text-white text-base">{p.name}</h4>
+                            <p className="text-xs text-slate-400 mt-0.5">{p.city} - {p.area}</p>
+                          </div>
+                          <span className={`text-xs px-3 py-1 rounded-full font-bold ${
+                            isActive ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                          }`}>
+                            {isActive ? `نشط (${daysLeft} يوم)` : 'معطل / منتهي'}
+                          </span>
                         </div>
-                        <span className={`text-xs px-3 py-1 rounded-full font-bold ${
-                          p.subscriptionStatus === 'active' && p.subscriptionDaysLeft > 0 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
-                        }`}>
-                          {p.subscriptionStatus === 'active' && p.subscriptionDaysLeft > 0 ? `نشط (${p.subscriptionDaysLeft} يوم)` : 'معطل / منتهي'}
-                        </span>
-                      </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                          <span className="text-slate-400 block">صاحب الملعب:</span>
-                          <span className="text-white font-bold text-sm block">{p.ownerName}</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                          <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                            <span className="text-slate-400 block">صاحب الملعب:</span>
+                            <span className="text-white font-bold text-sm block">{p.ownerName}</span>
+                          </div>
+                          <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                            <span className="text-slate-400 block">رقم الهاتف:</span>
+                            <span className="text-emerald-400 font-mono font-bold text-sm block">{p.ownerPhone}</span>
+                          </div>
+                          <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
+                            <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
+                            <span className="text-amber-400 font-mono font-bold text-sm block">{p.lastRenewDate}</span>
+                          </div>
                         </div>
-                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                          <span className="text-slate-400 block">رقم الهاتف:</span>
-                          <span className="text-emerald-400 font-mono font-bold text-sm block">{p.ownerPhone}</span>
-                        </div>
-                        <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
-                          <span className="text-slate-400 block">آخر تاريخ تجديد:</span>
-                          <span className="text-amber-400 font-mono font-bold text-sm block">{p.lastRenewDate}</span>
-                        </div>
-                      </div>
 
-                      <div className="pt-2 flex flex-wrap gap-3">
-                        <button
-                          onClick={async () => {
-                            const today = new Date().toISOString().split('T')[0];
-                            await updateDoc(doc(db, 'pitches', p.id), {
-                              subscriptionStatus: 'active',
-                              subscriptionDaysLeft: (p.subscriptionDaysLeft || 0) + 30,
-                              lastRenewDate: today,
-                              usedEmergencyExtension: false
-                            });
-                          }}
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                        >
-                          + تمديد 30 يوماً
-                        </button>
-                        <button
-                          onClick={async () => {
-                            await updateDoc(doc(db, 'pitches', p.id), {
-                              subscriptionStatus: 'expired',
-                              subscriptionDaysLeft: 0
-                            });
-                            alert('تم تعطيل الملعب بنجاح وإخفاؤه عن قائمة اللاعبين');
-                          }}
-                          className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
-                        >
-                          تعطيل الحساب
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (confirm(`هل أنت متأكد من حذف ملعب (${p.name}) نهائياً من النظام؟`)) {
-                              await deleteDoc(doc(db, 'pitches', p.id));
-                              alert('تم حذف الملعب نهائياً!');
-                            }
-                          }}
-                          className="bg-slate-800 hover:bg-rose-900 text-rose-400 hover:text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all border border-slate-700"
-                        >
-                          حذف نهائياً
-                        </button>
+                        <div className="pt-2 flex flex-wrap gap-3">
+                          <button
+                            onClick={async () => {
+                              const todayStr = new Date().toISOString().split('T')[0];
+                              const curDays = calculateDaysLeft(p);
+                              await updateDoc(doc(db, 'pitches', p.id), {
+                                subscriptionStatus: 'active',
+                                subscriptionDaysLeft: curDays + 30,
+                                lastRenewDate: todayStr,
+                                usedEmergencyExtension: false
+                              });
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                          >
+                            + تمديد 30 يوماً
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await updateDoc(doc(db, 'pitches', p.id), {
+                                subscriptionStatus: 'expired',
+                                subscriptionDaysLeft: 0
+                              });
+                              alert('تم تعطيل الملعب بنجاح وإخفاؤه عن قائمة اللاعبين');
+                            }}
+                            className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md"
+                          >
+                            تعطيل الحساب
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (confirm(`هل أنت متأكد من حذف ملعب (${p.name}) نهائياً من النظام؟`)) {
+                                await deleteDoc(doc(db, 'pitches', p.id));
+                                alert('تم حذف الملعب نهائياً!');
+                              }
+                            }}
+                            className="bg-slate-800 hover:bg-rose-900 text-rose-400 hover:text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all border border-slate-700"
+                          >
+                            حذف نهائياً
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -1894,7 +1948,7 @@ export default function Home() {
               <div className="space-y-4 bg-slate-950 p-4 rounded-2xl border border-emerald-950">
                 <div className="space-y-1">
                   <h5 className="font-bold text-white text-xs">تحميل تطبيق الأندرويد الرسمي (APK)</h5>
-                  <p className="text-[11px] text-slate-400">حجم خفيف وتثبيت سريع ومباشر على جهازك دون الحاجة للمتجر.</p>
+                  <p className="text-[11px] text-slate-400">حجم خفيف وتثبيت مباشر على جهازك دون الحاجة للمتجر.</p>
                 </div>
 
                 <a
@@ -1906,7 +1960,7 @@ export default function Home() {
                 </a>
 
                 <div className="text-[10px] text-slate-500 space-y-1 bg-slate-900/60 p-2.5 rounded-xl border border-slate-850">
-                  <p>💡 <b>طريقة التثبيت:</b> بعد انتهاء التحميل، افتح الملف واضغط <b>تثبيت (Install)</b>. إذا ظهر لك تنبيه، اختر السماح بالتثبيت من هذا المصدر.</p>
+                  <p>💡 <b>طريقة التثبيت:</b> بعد انتهاء التحميل، افتح الملف واضغط <b>تثبيت (Install)</b>.</p>
                 </div>
               </div>
             )}
@@ -1922,21 +1976,21 @@ export default function Home() {
                   <div className="flex items-start gap-2.5 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0">1</span>
                     <p className="text-slate-200 text-[11px]">
-                      اضغط على زر المشاركة <b>(Share ⎋)</b> الموجود في أسفل شاشة المتصفح.
+                      اضغط على زر المشاركة <b>(Share ⎋)</b> في أسفل شاشة Safari.
                     </p>
                   </div>
 
                   <div className="flex items-start gap-2.5 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0">2</span>
                     <p className="text-slate-200 text-[11px]">
-                      مرر القائمة للأسفل واضغط على <b>"إضافة إلى الشاشة الرئيسية" (Add to Home Screen)</b>.
+                      مرر القائمة واضغط على <b>"إضافة إلى الشاشة الرئيسية" (Add to Home Screen)</b>.
                     </p>
                   </div>
 
                   <div className="flex items-start gap-2.5 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0">3</span>
                     <p className="text-slate-200 text-[11px]">
-                      اضغط على كلمة <b>"إضافة" (Add)</b> في أعلى الزاوية، وسيثبت التطبيق بأيقونته الرسمية على شاشتك فوراً!
+                      اضغط على كلمة <b>"إضافة" (Add)</b>، وسيثبت التطبيق على شاشتك فوراً.
                     </p>
                   </div>
                 </div>
