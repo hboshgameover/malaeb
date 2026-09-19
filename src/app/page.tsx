@@ -92,6 +92,7 @@ interface Pitch {
   usedEmergencyExtension?: boolean;
   dayWorkingHours?: Record<string, number[]>;
   googleMapsUrl?: string;
+  bookingMode?: 'online' | 'phone';
 }
 
 const IRAQ_PROVINCES = [
@@ -188,6 +189,7 @@ export default function Home() {
   const [editBio, setEditBio] = useState('');
   const [editImage, setEditImage] = useState('');
   const [editGoogleMapsUrl, setEditGoogleMapsUrl] = useState('');
+  const [editBookingMode, setEditBookingMode] = useState<'online' | 'phone'>('online');
   const [profileSavedToast, setProfileSavedToast] = useState(false);
   const [savingPitch, setSavingPitch] = useState(false);
 
@@ -340,9 +342,13 @@ export default function Home() {
       setEditBio(currentOwnerPitch.bio);
       setEditImage(currentOwnerPitch.imageUrl || '');
       setEditGoogleMapsUrl(currentOwnerPitch.googleMapsUrl || '');
+      setEditBookingMode(currentOwnerPitch.bookingMode || 'online');
       setSchedulePrice(currentOwnerPitch.defaultPricePerHour || 20000);
       if (currentOwnerPitch.dayWorkingHours) {
         setDayScheduleSettings(prev => ({ ...prev, ...currentOwnerPitch.dayWorkingHours }));
+      }
+      if (currentOwnerPitch.bookingMode === 'phone') {
+        setOwnerTab('profile');
       }
     }
   }, [currentOwnerPitch?.id]);
@@ -566,7 +572,8 @@ export default function Home() {
       lastRenewDate: '-',
       usedEmergencyExtension: false,
       dayWorkingHours: dayScheduleSettings,
-      googleMapsUrl: ''
+      googleMapsUrl: '',
+      bookingMode: 'online'
     };
 
     try {
@@ -728,7 +735,8 @@ export default function Home() {
         bio: editBio,
         imageUrl: editImage,
         googleMapsUrl: editGoogleMapsUrl,
-        defaultPricePerHour: schedulePrice
+        defaultPricePerHour: schedulePrice,
+        bookingMode: editBookingMode
       });
       setProfileSavedToast(true);
       setTimeout(() => setProfileSavedToast(false), 3000);
@@ -784,6 +792,7 @@ export default function Home() {
   });
 
   const isOwnerActive = currentOwnerPitch ? (currentOwnerPitch.subscriptionStatus === 'active' && calculateDaysLeft(currentOwnerPitch) > 0) : false;
+  const isOwnerPhoneOnly = currentOwnerPitch?.bookingMode === 'phone';
 
   return (
     <div dir="rtl" className="min-h-screen bg-slate-950 text-slate-100 font-sans p-3 md:p-8 flex flex-col justify-between relative">
@@ -1117,36 +1126,57 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="flex border-b border-slate-800 gap-4 overflow-x-auto pb-1 scrollbar-thin">
-                    <button
-                      onClick={() => setOwnerTab('bookings')}
-                      className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
-                        ownerTab === 'bookings' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <CalendarIcon className="w-4 h-4" /> إدارة جدول الحجوزات ({currentOwnerPitch.name})
-                    </button>
 
-                    <button
-                      onClick={() => setOwnerTab('schedule')}
-                      className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
-                        ownerTab === 'schedule' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <Settings className="w-4 h-4" /> أوقات وساعات الدوام (24 ساعة)
-                    </button>
+                  {isOwnerPhoneOnly && (
+                    <div className="bg-amber-950/40 border border-amber-500/60 p-5 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+                      <div className="flex items-center gap-3.5">
+                        <div className="p-3 bg-amber-500/20 rounded-2xl text-amber-400 border border-amber-500/30 flex-shrink-0">
+                          <PhoneCall className="w-6 h-6 animate-pulse" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black text-amber-300">وضع الحجز الهاتفي مفعّل حالياً</h4>
+                          <p className="text-xs text-slate-300 mt-0.5">
+                            تم إخفاء جدول المواعيد الإلكتروني عنك وعن اللاعبين. يظهر للاعبين الآن فقط صورتك، موقعك، ورقم هاتفك للحجز المباشر.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex border-b border-slate-800 gap-4 overflow-x-auto pb-1 scrollbar-thin">
+                    {!isOwnerPhoneOnly && (
+                      <>
+                        <button
+                          onClick={() => setOwnerTab('bookings')}
+                          className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
+                            ownerTab === 'bookings' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <CalendarIcon className="w-4 h-4" /> إدارة جدول الحجوزات ({currentOwnerPitch.name})
+                        </button>
+
+                        <button
+                          onClick={() => setOwnerTab('schedule')}
+                          className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
+                            ownerTab === 'schedule' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Settings className="w-4 h-4" /> أوقات وساعات الدوام (24 ساعة)
+                        </button>
+                      </>
+                    )}
 
                     <button
                       onClick={() => setOwnerTab('profile')}
                       className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
-                        ownerTab === 'profile' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
+                        ownerTab === 'profile' || isOwnerPhoneOnly ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <Edit3 className="w-4 h-4" /> بيانات الملعب والموقع الجغرافي
+                      <Edit3 className="w-4 h-4" /> بيانات الملعب ونوع الحجز والموقع
                     </button>
                   </div>
 
-                  {ownerTab === 'bookings' && (
+                  {!isOwnerPhoneOnly && ownerTab === 'bookings' && (
                     <div className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
@@ -1352,7 +1382,7 @@ export default function Home() {
                     </div>
                   )}
 
-                  {ownerTab === 'schedule' && (
+                  {!isOwnerPhoneOnly && ownerTab === 'schedule' && (
                     <div className="bg-slate-900 border border-amber-500/40 p-6 rounded-3xl space-y-6 max-w-4xl">
                       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
                         <div>
@@ -1469,16 +1499,55 @@ export default function Home() {
                     </div>
                   )}
 
-                  {ownerTab === 'profile' && (
+                  {(ownerTab === 'profile' || isOwnerPhoneOnly) && (
                     <form onSubmit={saveProfileSettings} className="space-y-6 max-w-3xl">
                       {profileSavedToast && (
                         <div className="p-3 bg-emerald-950 border border-emerald-600 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات والموقع في السحابة بنجاح!
+                          <CheckCircle2 className="w-4 h-4" /> تم حفظ التعديلات ونوع الحجز والموقع بنجاح!
                         </div>
                       )}
 
                       <div className="bg-slate-900/90 border border-slate-800 p-6 rounded-3xl space-y-5">
-                        <h4 className="font-bold text-white text-base">بيانات الملعب والموقع الجغرافي</h4>
+                        <h4 className="font-bold text-white text-base">بيانات الملعب وطريقة استقبال الحجوزات</h4>
+
+                        <div className="bg-slate-950 p-4 rounded-2xl border border-amber-500/50 space-y-3">
+                          <label className="text-xs text-amber-400 font-bold block">
+                            طريقة استقبال الحجوزات في ملعبك:
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setEditBookingMode('online')}
+                              className={`p-3.5 rounded-xl border text-right transition-all flex items-start gap-3 ${
+                                editBookingMode === 'online'
+                                  ? 'bg-emerald-950/80 border-emerald-500 text-white shadow-lg'
+                                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              <CalendarIcon className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <span className="text-xs font-bold block text-white">حجز إلكتروني عبر المنصة</span>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">جدول مواعيد 24 ساعة، حجز إلكتروني للاعبين، وحساب الإيرادات</span>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setEditBookingMode('phone')}
+                              className={`p-3.5 rounded-xl border text-right transition-all flex items-start gap-3 ${
+                                editBookingMode === 'phone'
+                                  ? 'bg-amber-950/80 border-amber-500 text-white shadow-lg'
+                                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              <PhoneCall className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <span className="text-xs font-bold block text-white">اتصال هاتفي مباشر فقط</span>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">إخفاء جدول المواعيد وتوجيه اللاعبين للاتصال برقم هاتفك فوراً</span>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
 
                         <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
                           <label className="text-xs text-slate-300 block font-bold">صورة واجهة الملعب:</label>
@@ -1489,7 +1558,7 @@ export default function Home() {
                               className="w-32 h-24 object-cover rounded-xl border border-slate-850 shadow-md flex-shrink-0"
                             />
                             <div className="space-y-2 w-full">
-                              <label className="bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold px-4 py-2.5 rounded-xl text-xs cursor-pointer inline-flex items-center gap-2 border border-slate-700 transition-all">
+                              <label className="bg-slate-800 hover:bg-slate-750 text-emerald-400 font-bold px-4 py-2.5 rounded-xl text-xs cursor-pointer inline-flex items-center gap-2 border border-slate-700 transition-all">
                                 <Upload className="w-4 h-4" /> اختيار صورة من الجهاز
                                 <input 
                                   type="file" 
@@ -1580,7 +1649,7 @@ export default function Home() {
                         disabled={savingPitch}
                         className="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-black py-3.5 rounded-xl text-xs transition-all shadow-lg"
                       >
-                        {savingPitch ? 'جارٍ الحفظ في السحابة...' : 'حفظ بيانات الملعب والموقع الجغرافي'}
+                        {savingPitch ? 'جارٍ الحفظ في السحابة...' : 'حفظ بيانات الملعب ونوع الحجز'}
                       </button>
                     </form>
                   )}
@@ -1669,11 +1738,22 @@ export default function Home() {
                               <h3 className="font-bold text-white text-base">{p.name}</h3>
                               <span className="text-emerald-400 font-bold text-sm">{p.defaultPricePerHour.toLocaleString()} د.ع</span>
                             </div>
-                            <p className="text-xs text-slate-400 flex items-center gap-1">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-400" /> {p.city} - {p.area}
-                            </p>
+                            <div className="flex justify-between items-center">
+                              <p className="text-xs text-slate-400 flex items-center gap-1">
+                                <MapPin className="w-3.5 h-3.5 text-emerald-400" /> {p.city} - {p.area}
+                              </p>
+                              {p.bookingMode === 'phone' ? (
+                                <span className="text-[10px] bg-amber-950/80 text-amber-300 border border-amber-500/50 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
+                                  <PhoneCall className="w-3 h-3" /> حجز هاتفي
+                                </span>
+                              ) : (
+                                <span className="text-[10px] bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
+                                  <CalendarIcon className="w-3 h-3" /> حجز إلكتروني
+                                </span>
+                              )}
+                            </div>
                             <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs text-emerald-400 font-bold">
-                              <span>عرض المواعيد والموقع الجغرافي</span>
+                              <span>عرض التفاصيل والتواصل</span>
                               <ArrowRight className="w-4 h-4" />
                             </div>
                           </div>
@@ -1692,7 +1772,7 @@ export default function Home() {
                   </button>
 
                   {activePitchForPlayer && (
-                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-4">
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-5">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                           <h2 className="text-2xl font-black text-white">{activePitchForPlayer.name}</h2>
@@ -1714,49 +1794,124 @@ export default function Home() {
                         )}
                       </div>
 
-                      <p className="text-xs text-slate-300">{activePitchForPlayer.bio}</p>
+                      <img 
+                        src={activePitchForPlayer.imageUrl} 
+                        alt={activePitchForPlayer.name} 
+                        className="w-full h-56 md:h-72 object-cover rounded-2xl border border-slate-800 shadow-md"
+                      />
 
-                      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
-                        {dateOptions.map(date => (
-                          <button
-                            key={date.index}
-                            onClick={() => setSelectedDateIndex(date.index)}
-                            className={`flex-shrink-0 px-4 py-2.5 rounded-xl border text-center text-xs transition-all ${
-                              selectedDateIndex === date.index ? 'bg-emerald-600 text-white font-bold shadow-lg' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                            }`}
+                      <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-emerald-950 border border-emerald-800 text-emerald-400 rounded-xl">
+                            <PhoneCall className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <span className="text-[11px] text-slate-400 block">رقم كابتن الملعب المباشر:</span>
+                            <span className="text-sm font-black text-white font-mono">{activePitchForPlayer.ownerPhone}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <a
+                            href={`tel:${activePitchForPlayer.ownerPhone}`}
+                            className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-emerald-400 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border border-slate-700 transition-all"
                           >
-                            <span className="block font-bold">{date.dayName} {date.dayNum}</span>
-                            <span className="text-[10px] opacity-80 block mt-0.5">{date.monthName}</span>
-                          </button>
-                        ))}
+                            <PhoneCall className="w-3.5 h-3.5" /> اتصال
+                          </a>
+                          <a
+                            href={`https://wa.me/964${activePitchForPlayer.ownerPhone.replace(/^0/, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md"
+                          >
+                            مراسلة واتساب
+                          </a>
+                        </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3">
-                        {currentDaySlots.map(slot => (
-                          <button
-                            key={slot.id}
-                            disabled={slot.isBooked}
-                            onClick={() => {
-                              setSelectedSlot(slot);
-                              setBookingCaptainName(currentUser.name || '');
-                              setBookingCaptainPhone(currentUser.phone || '');
-                            }}
-                            className={`p-4 rounded-2xl border text-right transition-all flex justify-between items-center ${
-                              slot.isBooked ? 'bg-rose-950/20 border-rose-900/30 opacity-60' : 'bg-slate-950 border-slate-800 hover:border-emerald-500'
-                            }`}
-                          >
-                            <div>
-                              <span className="text-sm font-bold text-white block">{slot.time}</span>
-                              <span className="text-xs text-emerald-400 font-bold block mt-0.5">{slot.price.toLocaleString()} د.ع</span>
-                            </div>
-                            <span className={`text-xs px-2.5 py-1 rounded-md font-bold ${
-                              slot.isBooked ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-300'
-                            }`}>
-                              {slot.isBooked ? 'مقفول' : 'احجز الآن'}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-4 rounded-2xl border border-slate-850">
+                        {activePitchForPlayer.bio}
+                      </p>
+
+                      {activePitchForPlayer.bookingMode === 'phone' ? (
+                        <div className="bg-amber-950/30 border border-amber-500/50 p-6 md:p-8 rounded-3xl text-center space-y-4 my-2 shadow-2xl">
+                          <div className="w-14 h-14 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mx-auto border border-amber-500/40">
+                            <PhoneCall className="w-7 h-7 animate-bounce" />
+                          </div>
+                          <div className="space-y-1">
+                            <h4 className="text-lg font-black text-white">الحجز متاح عبر الاتصال الهاتفي المباشر فقط</h4>
+                            <p className="text-xs text-slate-400 max-w-md mx-auto">
+                              كابتن هذا الملعب يعتمد الحجز المباشر عبر الهاتف أو الواتساب. تواصل معه الآن لمعرفة الأوقات وتأكيد الحجز:
+                            </p>
+                          </div>
+                          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                            <a
+                              href={`tel:${activePitchForPlayer.ownerPhone}`}
+                              className="w-full sm:w-auto px-7 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg transition-all"
+                            >
+                              <PhoneCall className="w-4 h-4" /> اتصال هاتفي ({activePitchForPlayer.ownerPhone})
+                            </a>
+                            <a
+                              href={`https://wa.me/964${activePitchForPlayer.ownerPhone.replace(/^0/, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-full sm:w-auto px-7 py-3.5 bg-slate-800 hover:bg-slate-750 text-emerald-400 font-bold rounded-xl text-xs flex items-center justify-center gap-2 border border-slate-700 transition-all"
+                            >
+                              مراسلة واتساب فورية
+                            </a>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-4 pt-2">
+                          <div className="flex justify-between items-center">
+                            <h4 className="font-bold text-sm text-white">المواعيد الإلكترونية المتاحة للحجز:</h4>
+                            <span className="text-xs text-emerald-400 font-bold">{activePitchForPlayer.defaultPricePerHour.toLocaleString()} د.ع / الساعة</span>
+                          </div>
+
+                          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                            {dateOptions.map(date => (
+                              <button
+                                key={date.index}
+                                onClick={() => setSelectedDateIndex(date.index)}
+                                className={`flex-shrink-0 px-4 py-2.5 rounded-xl border text-center text-xs transition-all ${
+                                  selectedDateIndex === date.index ? 'bg-emerald-600 text-white font-bold shadow-lg' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                <span className="block font-bold">{date.dayName} {date.dayNum}</span>
+                                <span className="text-[10px] opacity-80 block mt-0.5">{date.monthName}</span>
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                            {currentDaySlots.map(slot => (
+                              <button
+                                key={slot.id}
+                                disabled={slot.isBooked}
+                                onClick={() => {
+                                  setSelectedSlot(slot);
+                                  setBookingCaptainName(currentUser.name || '');
+                                  setBookingCaptainPhone(currentUser.phone || '');
+                                }}
+                                className={`p-4 rounded-2xl border text-right transition-all flex justify-between items-center ${
+                                  slot.isBooked ? 'bg-rose-950/20 border-rose-900/30 opacity-60' : 'bg-slate-950 border-slate-800 hover:border-emerald-500'
+                                }`}
+                              >
+                                <div>
+                                  <span className="text-sm font-bold text-white block">{slot.time}</span>
+                                  <span className="text-xs text-emerald-400 font-bold block mt-0.5">{slot.price.toLocaleString()} د.ع</span>
+                                </div>
+                                <span className={`text-xs px-2.5 py-1 rounded-md font-bold ${
+                                  slot.isBooked ? 'bg-rose-950 text-rose-300' : 'bg-emerald-950 text-emerald-300'
+                                }`}>
+                                  {slot.isBooked ? 'مقفول' : 'احجز الآن'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                     </div>
                   )}
                 </div>
@@ -1817,7 +1972,12 @@ export default function Home() {
                       <div key={p.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-900">
                           <div>
-                            <h4 className="font-bold text-white text-base">{p.name}</h4>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-white text-base">{p.name}</h4>
+                              <span className="text-[10px] bg-slate-850 px-2 py-0.5 rounded text-slate-400 border border-slate-800 font-mono">
+                                {p.bookingMode === 'phone' ? '📞 هاتفي' : '💻 إلكتروني'}
+                              </span>
+                            </div>
                             <p className="text-xs text-slate-400 mt-0.5">{p.city} - {p.area}</p>
                           </div>
                           <span className={`text-xs px-3 py-1 rounded-full font-bold ${
